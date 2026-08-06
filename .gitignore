@@ -1,0 +1,24 @@
+# --- Android / Gradle ---
+**/build/
+**/.gradle/
+**/local.properties
+
+# --- IDEs (Android Studio, VS Code) ---
+**/.idea/
+**/.vscode/
+**/*.iml
+**/*.iws
+**/*.ipr
+**/.settings/
+
+# --- Build Outputs ---
+*.apk
+*.apks
+*.aab
+bin/
+gen/
+target/
+
+# --- Sistema Operacional ---
+.DS_Store
+Thumbs.db
