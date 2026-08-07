@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "514879906507",
+    "project_id": "marketplace-ifsp-7bcf9",
+    "storage_bucket": "marketplace-ifsp-7bcf9.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:514879906507:android:6d6c799f5f05561adab14e",
+        "android_client_info": {
+          "package_name": "com.example.marketplace"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDh66t7rhrVjoBrIHZ5GQ3J97i8wd7SQV4"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
