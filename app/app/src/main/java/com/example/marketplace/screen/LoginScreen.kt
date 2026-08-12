@@ -7,6 +7,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.marketplace.controller.LoginUiState
 import com.example.marketplace.controller.LoginViewModel
 import com.example.marketplace.model.Usuario
@@ -16,9 +17,10 @@ import com.google.firebase.firestore.FirebaseFirestore
 
 @Composable
 fun LoginScreen(
-    viewModel: LoginViewModel = LoginViewModel(),
+    viewModel: LoginViewModel = viewModel (),   // agora escopado à Activity, sobrevive a recomposições
     onLoginSuccess: (Usuario) -> Unit
 ) {
+
     var email by remember { mutableStateOf("") }
     var senha by remember { mutableStateOf("") }
     val uiState by viewModel.uiState.collectAsState()
