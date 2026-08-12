@@ -38,4 +38,10 @@ class LoginViewModel(
             }
         }
     }
+
+    fun logout() {
+        repository.logout()
+        _uiState.value = LoginUiState.Idle
+    }
+
 }

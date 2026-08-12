@@ -17,8 +17,9 @@ import com.google.firebase.firestore.FirebaseFirestore
 
 @Composable
 fun LoginScreen(
-    viewModel: LoginViewModel = viewModel (),   // agora escopado à Activity, sobrevive a recomposições
-    onLoginSuccess: (Usuario) -> Unit
+    viewModel: LoginViewModel = viewModel(),
+    onLoginSuccess: (Usuario) -> Unit,
+    onCriarConta: () -> Unit = {}
 ) {
 
     var email by remember { mutableStateOf("") }
@@ -74,6 +75,12 @@ fun LoginScreen(
             } else {
                 Text("Entrar")
             }
+        }
+
+        Spacer(Modifier.height(8.dp))
+
+        TextButton(onClick = onCriarConta) {
+            Text("Não tenho conta, criar agora")
         }
     }
 }

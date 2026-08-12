@@ -44,4 +44,25 @@ class UsuarioRepository {
     }
 
     fun usuarioAtual() = FirebaseService.auth.currentUser
+
+    suspend fun cadastrar(nome: String, email: String, senha: String, perfil: String): Usuario{
+        var result = FirebaseService.auth.createUserWithEmailAndPassword(email, senha).await()
+
+        val uid = result.user?.uid ?: throw Exception("UID NAO CONTRANDO APOS CADASTRAR")
+
+        val usuario = Usuario(
+            uid = uid,
+            nome = nome,
+            email = email,
+            perfil = perfil
+        )
+
+        FirebaseService.firestore
+            .collection("usuarios")
+            .document(uid)
+            .set(usuario)
+            .await()
+
+        return usuario
+    }
 }

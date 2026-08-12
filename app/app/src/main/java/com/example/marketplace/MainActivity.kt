@@ -16,30 +16,76 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.viewmodel.compose.viewModel
+import com.example.marketplace.controller.LoginUiState
+import com.example.marketplace.controller.LoginViewModel
 import com.example.marketplace.model.Usuario
+import com.example.marketplace.screen.CreateUsuarioScreen
 import com.example.marketplace.screen.LoginScreen
+
+// Controla qual tela mostrar quando o usuário NÃO está logado
+enum class TelaAuth {
+    LOGIN, CADASTRO
+}
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContent {
-            var usuarioLogado by remember { mutableStateOf<Usuario?>(null) }
             val context = LocalContext.current
+            val loginViewModel: LoginViewModel = viewModel()
+            val uiState by loginViewModel.uiState.collectAsState()
 
-            if (usuarioLogado == null) {
-                LoginScreen(onLoginSuccess = { usuario ->
-                    usuarioLogado = usuario
-                    Toast.makeText(context, "Login realizado com sucesso!", Toast.LENGTH_SHORT).show()
-                })
-            } else {
-                TelaBoasVindas(usuario = usuarioLogado!!)
+            var telaAtual by remember { mutableStateOf(TelaAuth.LOGIN) }
+
+            when (uiState) {
+                is LoginUiState.Sucesso -> {
+                    val usuario = (uiState as LoginUiState.Sucesso).usuario
+                    TelaBoasVindas(
+                        usuario = usuario,
+                        onLogout = {
+                            loginViewModel.logout()
+                            telaAtual = TelaAuth.LOGIN // garante que volta pro login, não pro cadastro
+                            Toast.makeText(context, "Você saiu da conta", Toast.LENGTH_SHORT).show()
+                        }
+                    )
+                }
+                else -> {
+                    when (telaAtual) {
+                        TelaAuth.LOGIN -> {
+                            LoginScreen(
+                                viewModel = loginViewModel,
+                                onLoginSuccess = {
+                                    Toast.makeText(context, "Login realizado com sucesso!", Toast.LENGTH_SHORT).show()
+                                },
+                                onCriarConta = {
+                                    telaAtual = TelaAuth.CADASTRO
+                                }
+                            )
+                        }
+                        TelaAuth.CADASTRO -> {
+                            CreateUsuarioScreen(
+                                onCadastroSuccess = { usuario ->
+                                    Toast.makeText(context, "Conta criada com sucesso!", Toast.LENGTH_SHORT).show()
+                                    // Loga automaticamente após o cadastro
+                                    loginViewModel.login(usuario.email, "") // ver observação abaixo
+                                    telaAtual = TelaAuth.LOGIN
+                                },
+                                onVoltarLogin = {
+                                    telaAtual = TelaAuth.LOGIN
+                                }
+                            )
+                        }
+                    }
+                }
             }
         }
     }
 }
 
+
 @Composable
-fun TelaBoasVindas(usuario: Usuario) {
+fun TelaBoasVindas(usuario: Usuario, onLogout: () -> Unit) {
     Column(
         modifier = Modifier.fillMaxSize().padding(24.dp),
         verticalArrangement = Arrangement.Center,
@@ -69,13 +115,19 @@ fun TelaBoasVindas(usuario: Usuario) {
                 Text("Perfil: ${usuario.perfil}", style = MaterialTheme.typography.bodyMedium)
             }
         }
+
+        Button(
+            onClick = onLogout
+        ) {
+            Text("Sair")
+        }
     }
 }
 
 @Preview(showBackground = true)
 @Composable
 fun LoginScreenPreview() {
-    LoginScreen(onLoginSuccess = {})
+    LoginScreen(onLoginSuccess = {}, onCriarConta = {})
 }
 
 @Preview(showBackground = true)
@@ -87,6 +139,7 @@ fun TelaBoasVindasPreview() {
             nome = "Gabriel Cache",
             email = "gabriel@teste.com",
             perfil = "negociante"
-        )
+        ),
+        onLogout = {}
     )
 }
