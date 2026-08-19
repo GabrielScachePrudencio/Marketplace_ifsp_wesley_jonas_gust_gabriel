@@ -4,5 +4,5 @@ data class Usuario(
     val uid: String = "",
     val nome: String = "",
     val email: String = "",
-    val perfil: String = ""
+    val perfis: List<String> = emptyList()
 )
