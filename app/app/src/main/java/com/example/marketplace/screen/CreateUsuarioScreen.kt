@@ -5,21 +5,29 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.marketplace.controller.CadastroUiState
 import com.example.marketplace.controller.CadastroViewModel
+import com.example.marketplace.controller.CadastroViewModelFactory
 import com.example.marketplace.model.Usuario
 
 @Composable
 fun CreateUsuarioScreen(
-    viewModel: CadastroViewModel = viewModel(),
     onCadastroSuccess: (Usuario) -> Unit,
     onVoltarLogin: () -> Unit
 ) {
+    val context = LocalContext.current
+    val viewModel: CadastroViewModel = viewModel(
+        factory = CadastroViewModelFactory(context)
+    )
+
     var nome by remember { mutableStateOf("") }
     var email by remember { mutableStateOf("") }
+    var cpf by remember { mutableStateOf("") }
     var senha by remember { mutableStateOf("") }
     var confirmarSenha by remember { mutableStateOf("") }
     var perfil by remember { mutableStateOf("comprador") } // valor padrão
@@ -59,6 +67,22 @@ fun CreateUsuarioScreen(
         Spacer(Modifier.height(8.dp))
 
         OutlinedTextField(
+            value = cpf,
+            onValueChange = { input ->
+                // aceita só dígitos e limita a 11 caracteres
+                if (input.length <= 11 && input.all { it.isDigit() }) {
+                    cpf = input
+                }
+            },
+            label = { Text("CPF") },
+            keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
+                keyboardType = KeyboardType.Number
+            ),
+            modifier = Modifier.fillMaxWidth()
+        )
+        Spacer(Modifier.height(8.dp))
+
+        OutlinedTextField(
             value = senha,
             onValueChange = { senha = it },
             label = { Text("Senha") },
@@ -76,7 +100,6 @@ fun CreateUsuarioScreen(
         )
         Spacer(Modifier.height(16.dp))
 
-        // Seleção simples de perfil (comprador / negociante)
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceEvenly
@@ -103,7 +126,7 @@ fun CreateUsuarioScreen(
         }
 
         Button(
-            onClick = { viewModel.cadastrar(nome, email, senha, confirmarSenha, perfil) },
+            onClick = { viewModel.cadastrar(nome, email, senha, confirmarSenha, perfil, cpf) },
             enabled = uiState !is CadastroUiState.Loading,
             modifier = Modifier.fillMaxWidth()
         ) {

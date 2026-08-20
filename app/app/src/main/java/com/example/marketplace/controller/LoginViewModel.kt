@@ -16,7 +16,7 @@ sealed class LoginUiState {
 }
 
 class LoginViewModel(
-    private val repository: UsuarioRepository = UsuarioRepository()
+    private val repository: UsuarioRepository
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow<LoginUiState>(LoginUiState.Idle)

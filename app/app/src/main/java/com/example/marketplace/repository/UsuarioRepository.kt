@@ -1,11 +1,13 @@
 package com.example.marketplace.data.repository
 
 import android.util.Log
+import com.example.marketplace.data.dao.UsuarioDao
 import com.example.marketplace.service.FirebaseService
 import com.example.marketplace.model.Usuario
 import kotlinx.coroutines.tasks.await
+import java.time.LocalDateTime
 
-class UsuarioRepository {
+class UsuarioRepository(private val usuarioDao: UsuarioDao) {
 
     suspend fun login(email: String, senha: String): Usuario {
         Log.d("MP_DEBUG", "Iniciando login com email=$email")
@@ -45,7 +47,7 @@ class UsuarioRepository {
 
     fun usuarioAtual() = FirebaseService.auth.currentUser
 
-    suspend fun cadastrar(nome: String, email: String, senha: String, perfil: String): Usuario{
+    suspend fun cadastrar(nome: String, email: String, senha: String, perfil: String, cpf: String): Usuario{
         var result = FirebaseService.auth.createUserWithEmailAndPassword(email, senha).await()
 
         val uid = result.user?.uid ?: throw Exception("UID NAO CONTRANDO APOS CADASTRAR")
@@ -54,7 +56,9 @@ class UsuarioRepository {
             uid = uid,
             nome = nome,
             email = email,
-            perfil = perfil
+            perfil = perfil,
+            cpf = cpf,
+            dataCriacao = LocalDateTime.now()
         )
 
         FirebaseService.firestore
@@ -63,6 +67,12 @@ class UsuarioRepository {
             .set(usuario)
             .await()
 
+        usuarioDao.insert(usuario)
+
         return usuario
+    }
+
+    suspend fun buscarUsuarioLocal(uid: String): Usuario? {
+        return usuarioDao.buscarPorId(uid)
     }
 }

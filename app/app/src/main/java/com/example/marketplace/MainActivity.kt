@@ -19,6 +19,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.marketplace.controller.LoginUiState
 import com.example.marketplace.controller.LoginViewModel
+import com.example.marketplace.controller.LoginViewModelFactory
 import com.example.marketplace.model.Usuario
 import com.example.marketplace.screen.CreateUsuarioScreen
 import com.example.marketplace.screen.LoginScreen
@@ -33,7 +34,9 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         setContent {
             val context = LocalContext.current
-            val loginViewModel: LoginViewModel = viewModel()
+            val loginViewModel: LoginViewModel = viewModel(
+                factory = LoginViewModelFactory(context)
+            )
             val uiState by loginViewModel.uiState.collectAsState()
 
             var telaAtual by remember { mutableStateOf(TelaAuth.LOGIN) }
