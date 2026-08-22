@@ -21,6 +21,30 @@ class UsuarioRepository(private val usuarioDao: UsuarioDao) {
 
         val uid = result.user?.uid ?: throw Exception("UID não encontrado após login")
 
+        val usuario = buscarUsuarioPorUid(uid)
+
+        Log.d("MP_DEBUG", "Usuario convertido: $usuario")
+
+        return usuario
+    }
+
+    fun logout() {
+        FirebaseService.auth.signOut()
+    }
+
+    fun usuarioAtual() = FirebaseService.auth.currentUser
+
+    suspend fun carregarUsuarioAtual(): Usuario? {
+        val uid = usuarioAtual()?.uid ?: return null
+        return try {
+            buscarUsuarioPorUid(uid)
+        } catch (e: Exception) {
+            Log.d("MP_DEBUG", "Falha ao restaurar sessão: ${e.message}")
+            null
+        }
+    }
+
+    private suspend fun buscarUsuarioPorUid(uid: String): Usuario {
         Log.d("MP_DEBUG", "Buscando documento em usuarios/$uid")
 
         val doc = FirebaseService.firestore
@@ -35,7 +59,7 @@ class UsuarioRepository(private val usuarioDao: UsuarioDao) {
         if (!doc.exists()) throw Exception("Perfil de usuário não encontrado no Firestore")
 
         val dataCriacaoMillis = doc.getLong("dataCriacao")
-        val usuario = Usuario(
+        return Usuario(
             uid = uid,
             nome = doc.getString("nome") ?: "",
             email = doc.getString("email") ?: "",
@@ -45,17 +69,7 @@ class UsuarioRepository(private val usuarioDao: UsuarioDao) {
                 LocalDateTime.ofEpochSecond(it / 1000, ((it % 1000) * 1_000_000).toInt(), ZoneOffset.UTC)
             } ?: LocalDateTime.now()
         )
-
-        Log.d("MP_DEBUG", "Usuario convertido: $usuario")
-
-        return usuario
     }
-
-    fun logout() {
-        FirebaseService.auth.signOut()
-    }
-
-    fun usuarioAtual() = FirebaseService.auth.currentUser
 
     suspend fun cadastrar(nome: String, email: String, senha: String, perfil: String, cpf: String): Usuario{
         var result = FirebaseService.auth.createUserWithEmailAndPassword(email, senha).await()

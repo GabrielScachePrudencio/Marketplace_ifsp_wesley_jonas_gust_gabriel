@@ -22,6 +22,14 @@ class LoginViewModel(
     private val _uiState = MutableStateFlow<LoginUiState>(LoginUiState.Idle)
     val uiState: StateFlow<LoginUiState> = _uiState
 
+    init {
+        viewModelScope.launch {
+            repository.carregarUsuarioAtual()?.let { usuario ->
+                _uiState.value = LoginUiState.Sucesso(usuario)
+            }
+        }
+    }
+
     fun login(email: String, senha: String) {
         if (email.isBlank() || senha.isBlank()) {
             _uiState.value = LoginUiState.Erro("Preencha email e senha")
