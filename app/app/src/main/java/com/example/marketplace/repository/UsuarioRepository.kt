@@ -6,6 +6,7 @@ import com.example.marketplace.service.FirebaseService
 import com.example.marketplace.model.Usuario
 import kotlinx.coroutines.tasks.await
 import java.time.LocalDateTime
+import java.time.ZoneOffset
 
 class UsuarioRepository(private val usuarioDao: UsuarioDao) {
 
@@ -33,8 +34,17 @@ class UsuarioRepository(private val usuarioDao: UsuarioDao) {
 
         if (!doc.exists()) throw Exception("Perfil de usuário não encontrado no Firestore")
 
-        val usuario = doc.toObject(Usuario::class.java)?.copy(uid = uid)
-            ?: throw Exception("Erro ao converter dados do usuário")
+        val dataCriacaoMillis = doc.getLong("dataCriacao")
+        val usuario = Usuario(
+            uid = uid,
+            nome = doc.getString("nome") ?: "",
+            email = doc.getString("email") ?: "",
+            perfil = doc.getString("perfil") ?: "",
+            cpf = doc.getString("cpf") ?: "",
+            dataCriacao = dataCriacaoMillis?.let {
+                LocalDateTime.ofEpochSecond(it / 1000, ((it % 1000) * 1_000_000).toInt(), ZoneOffset.UTC)
+            } ?: LocalDateTime.now()
+        )
 
         Log.d("MP_DEBUG", "Usuario convertido: $usuario")
 
@@ -61,10 +71,19 @@ class UsuarioRepository(private val usuarioDao: UsuarioDao) {
             dataCriacao = LocalDateTime.now()
         )
 
+        val dadosFirestore = mapOf(
+            "uid" to usuario.uid,
+            "nome" to usuario.nome,
+            "email" to usuario.email,
+            "perfil" to usuario.perfil,
+            "cpf" to usuario.cpf,
+            "dataCriacao" to usuario.dataCriacao.toEpochSecond(ZoneOffset.UTC) * 1000
+        )
+
         FirebaseService.firestore
             .collection("usuarios")
             .document(uid)
-            .set(usuario)
+            .set(dadosFirestore)
             .await()
 
         usuarioDao.insert(usuario)
