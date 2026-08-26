@@ -36,13 +36,38 @@ class UsuarioRepository(private val usuarioDao: UsuarioDao) {
 
     suspend fun carregarUsuarioAtual(): Usuario? {
         val uid = usuarioAtual()?.uid ?: return null
+
         return try {
-            buscarUsuarioPorUid(uid)
+
+            // 1. Primeiro procura no banco local
+            val usuarioLocal =
+                usuarioDao.buscarPorId(uid)
+
+            if (usuarioLocal != null) {
+                return usuarioLocal
+            }
+
+            // 2. Se não encontrou localmente,
+            // busca no Firebase
+            val usuarioFirebase =
+                buscarUsuarioPorUid(uid)
+
+            // 3. Salva no banco local
+            usuarioDao.insert(usuarioFirebase)
+
+            usuarioFirebase
+
         } catch (e: Exception) {
-            Log.d("MP_DEBUG", "Falha ao restaurar sessão: ${e.message}")
+
+            Log.d(
+                "MP_DEBUG",
+                "Falha ao restaurar sessão: ${e.message}"
+            )
+
             null
         }
     }
+
 
     private suspend fun buscarUsuarioPorUid(uid: String): Usuario {
         Log.d("MP_DEBUG", "Buscando documento em usuarios/$uid")

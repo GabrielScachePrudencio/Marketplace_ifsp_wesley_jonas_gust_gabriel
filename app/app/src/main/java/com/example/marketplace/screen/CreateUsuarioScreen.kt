@@ -1,6 +1,7 @@
 package com.example.marketplace.screen
 
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -21,6 +22,7 @@ fun CreateUsuarioScreen(
     onVoltarLogin: () -> Unit
 ) {
     val context = LocalContext.current
+
     val viewModel: CadastroViewModel = viewModel(
         factory = CadastroViewModelFactory(context)
     )
@@ -30,13 +32,19 @@ fun CreateUsuarioScreen(
     var cpf by remember { mutableStateOf("") }
     var senha by remember { mutableStateOf("") }
     var confirmarSenha by remember { mutableStateOf("") }
-    var perfil by remember { mutableStateOf("comprador") } // valor padrão
+
+    // Mantendo String, como já está no seu projeto
+    var perfil by remember {
+        mutableStateOf("comprador")
+    }
 
     val uiState by viewModel.uiState.collectAsState()
 
     LaunchedEffect(uiState) {
         if (uiState is CadastroUiState.Sucesso) {
-            onCadastroSuccess((uiState as CadastroUiState.Sucesso).usuario)
+            onCadastroSuccess(
+                (uiState as CadastroUiState.Sucesso).usuario
+            )
         }
     }
 
@@ -47,39 +55,55 @@ fun CreateUsuarioScreen(
         verticalArrangement = Arrangement.Center,
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        Text("Criar Conta", style = MaterialTheme.typography.headlineMedium)
+
+        Text(
+            "Criar Conta",
+            style = MaterialTheme.typography.headlineMedium
+        )
+
         Spacer(Modifier.height(24.dp))
 
         OutlinedTextField(
             value = nome,
             onValueChange = { nome = it },
             label = { Text("Nome") },
-            modifier = Modifier.fillMaxWidth()
+            modifier = Modifier.fillMaxWidth(),
+            singleLine = true
         )
+
         Spacer(Modifier.height(8.dp))
 
         OutlinedTextField(
             value = email,
             onValueChange = { email = it },
             label = { Text("Email") },
-            modifier = Modifier.fillMaxWidth()
+            keyboardOptions = KeyboardOptions(
+                keyboardType = KeyboardType.Email
+            ),
+            modifier = Modifier.fillMaxWidth(),
+            singleLine = true
         )
+
         Spacer(Modifier.height(8.dp))
 
         OutlinedTextField(
             value = cpf,
             onValueChange = { input ->
-                // aceita só dígitos e limita a 11 caracteres
-                if (input.length <= 11 && input.all { it.isDigit() }) {
+                if (
+                    input.length <= 11 &&
+                    input.all { it.isDigit() }
+                ) {
                     cpf = input
                 }
             },
             label = { Text("CPF") },
-            keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
+            keyboardOptions = KeyboardOptions(
                 keyboardType = KeyboardType.Number
             ),
-            modifier = Modifier.fillMaxWidth()
+            modifier = Modifier.fillMaxWidth(),
+            singleLine = true
         )
+
         Spacer(Modifier.height(8.dp))
 
         OutlinedTextField(
@@ -87,8 +111,10 @@ fun CreateUsuarioScreen(
             onValueChange = { senha = it },
             label = { Text("Senha") },
             visualTransformation = PasswordVisualTransformation(),
-            modifier = Modifier.fillMaxWidth()
+            modifier = Modifier.fillMaxWidth(),
+            singleLine = true
         )
+
         Spacer(Modifier.height(8.dp))
 
         OutlinedTextField(
@@ -96,42 +122,86 @@ fun CreateUsuarioScreen(
             onValueChange = { confirmarSenha = it },
             label = { Text("Confirmar senha") },
             visualTransformation = PasswordVisualTransformation(),
-            modifier = Modifier.fillMaxWidth()
+            modifier = Modifier.fillMaxWidth(),
+            singleLine = true
         )
+
         Spacer(Modifier.height(16.dp))
+
+        Text(
+            text = "Tipo de usuário",
+            style = MaterialTheme.typography.titleMedium
+        )
+
+        Spacer(Modifier.height(8.dp))
 
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceEvenly
         ) {
+
             FilterChip(
                 selected = perfil == "comprador",
-                onClick = { perfil = "comprador" },
-                label = { Text("Comprador") }
+                onClick = {
+                    perfil = "comprador"
+                },
+                label = {
+                    Text("Comprador")
+                }
             )
+
             FilterChip(
-                selected = perfil == "negociante",
-                onClick = { perfil = "negociante" },
-                label = { Text("Negociante") }
+                selected = perfil == "motorista",
+                onClick = {
+                    perfil = "motorista"
+                },
+                label = {
+                    Text("Motorista")
+                }
+            )
+
+            FilterChip(
+                selected = perfil == "negociador",
+                onClick = {
+                    perfil = "negociador"
+                },
+                label = {
+                    Text("Negociador")
+                }
             )
         }
+
         Spacer(Modifier.height(16.dp))
 
         if (uiState is CadastroUiState.Erro) {
+
             Text(
-                (uiState as CadastroUiState.Erro).mensagem,
+                text = (uiState as CadastroUiState.Erro).mensagem,
                 color = MaterialTheme.colorScheme.error
             )
+
             Spacer(Modifier.height(8.dp))
         }
 
         Button(
-            onClick = { viewModel.cadastrar(nome, email, senha, confirmarSenha, perfil, cpf) },
+            onClick = {
+                viewModel.cadastrar(
+                    nome = nome,
+                    email = email,
+                    senha = senha,
+                    confirmarSenha = confirmarSenha,
+                    perfil = perfil,
+                    cpf = cpf
+                )
+            },
             enabled = uiState !is CadastroUiState.Loading,
             modifier = Modifier.fillMaxWidth()
         ) {
+
             if (uiState is CadastroUiState.Loading) {
-                CircularProgressIndicator(modifier = Modifier.size(20.dp))
+                CircularProgressIndicator(
+                    modifier = Modifier.size(20.dp)
+                )
             } else {
                 Text("Cadastrar")
             }
@@ -139,7 +209,9 @@ fun CreateUsuarioScreen(
 
         Spacer(Modifier.height(8.dp))
 
-        TextButton(onClick = onVoltarLogin) {
+        TextButton(
+            onClick = onVoltarLogin
+        ) {
             Text("Já tenho conta, fazer login")
         }
     }
