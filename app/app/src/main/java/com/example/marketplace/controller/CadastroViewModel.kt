@@ -18,34 +18,111 @@ sealed class CadastroUiState {
 class CadastroViewModel(
     private val repository: UsuarioRepository
 ) : ViewModel() {
-    private val _uiState = MutableStateFlow<CadastroUiState>(CadastroUiState.Idle)
+
+    private val _uiState =
+        MutableStateFlow<CadastroUiState>(CadastroUiState.Idle)
+
     val uiState: StateFlow<CadastroUiState> = _uiState
 
-    fun cadastrar(nome: String, email: String, senha: String, confirmarSenha: String, perfil: String, cpf: String) {
-        if (nome.isBlank() || email.isBlank() || senha.isBlank()) {
-            _uiState.value = CadastroUiState.Erro("Preencha todos os campos")
+    fun cadastrar(
+        nome: String,
+        email: String,
+        senha: String,
+        confirmarSenha: String,
+        perfil: String,
+        cpf: String,
+        rua: String,
+        numero: String,
+        cidade: String,
+        estado: String,
+        cep: String
+    ) {
+
+        if (
+            nome.isBlank() ||
+            email.isBlank() ||
+            senha.isBlank() ||
+            cpf.isBlank()
+        ) {
+            _uiState.value =
+                CadastroUiState.Erro("Preencha todos os campos")
             return
         }
+
         if (senha != confirmarSenha) {
-            _uiState.value = CadastroUiState.Erro("As senhas não coincidem")
+            _uiState.value =
+                CadastroUiState.Erro("As senhas não coincidem")
             return
         }
+
         if (senha.length < 6) {
-            _uiState.value = CadastroUiState.Erro("A senha deve ter no mínimo 6 caracteres")
+            _uiState.value =
+                CadastroUiState.Erro(
+                    "A senha deve ter no mínimo 6 caracteres"
+                )
             return
         }
-        if(cpf.length != 11){
-            _uiState.value = CadastroUiState.Erro("A o cpf precisa ter 11 caracteres")
+
+        if (cpf.length != 11) {
+            _uiState.value =
+                CadastroUiState.Erro(
+                    "O CPF precisa ter 11 caracteres"
+                )
+            return
+        }
+
+        if (
+            perfil != "comprador" &&
+            perfil != "motorista" &&
+            perfil != "negociador"
+        ) {
+            _uiState.value =
+                CadastroUiState.Erro(
+                    "Selecione um tipo de usuário válido"
+                )
+            return
+        }
+
+        if (
+            rua.isBlank() ||
+            numero.isBlank() ||
+            cidade.isBlank() ||
+            estado.isBlank() ||
+            cep.isBlank()
+        ) {
+            _uiState.value =
+                CadastroUiState.Erro("Preencha o endereço completo")
             return
         }
 
         viewModelScope.launch {
+
             _uiState.value = CadastroUiState.Loading
+
             try {
-                val usuario = repository.cadastrar(nome, email, senha, perfil, cpf)
-                _uiState.value = CadastroUiState.Sucesso(usuario)
+
+                val usuario = repository.cadastrar(
+                    nome = nome,
+                    email = email,
+                    senha = senha,
+                    perfil = perfil,
+                    cpf = cpf,
+                    rua = rua,
+                    numero = numero,
+                    cidade = cidade,
+                    estado = estado,
+                    cep = cep
+                )
+
+                _uiState.value =
+                    CadastroUiState.Sucesso(usuario)
+
             } catch (e: Exception) {
-                _uiState.value = CadastroUiState.Erro(e.message ?: "Erro ao criar usuario novo")
+
+                _uiState.value =
+                    CadastroUiState.Erro(
+                        e.message ?: "Erro ao criar usuário"
+                    )
             }
         }
     }

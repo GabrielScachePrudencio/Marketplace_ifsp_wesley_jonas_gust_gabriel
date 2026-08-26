@@ -25,7 +25,7 @@ import com.example.marketplace.model.Venda
         Veiculo::class,
         Venda::class
     ],
-    version = 1,
+    version = 2,
     exportSchema = false
 )
 @TypeConverters(Converters::class)
@@ -46,7 +46,9 @@ abstract class AppDatabase : RoomDatabase() {
                     context.applicationContext,
                     AppDatabase::class.java,
                     "MarketPlace-IFSP"
-                ).build()
+                )
+                    .fallbackToDestructiveMigration() // apaga e recria se a versão mudar
+                    .build()
                 INSTANCE = instance
                 instance
             }

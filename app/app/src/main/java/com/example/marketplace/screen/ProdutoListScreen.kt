@@ -30,8 +30,13 @@ fun ProdutoListScreen(
     val viewModel: ProdutoListViewModel = viewModel(
         factory = ProdutoListViewModelFactory(context)
     )
-    val produtos by viewModel.produtos.collectAsState()
+    val todosProdutos by viewModel.produtos.collectAsState()
 
+    val produtos = if (usuario.perfil == "negociador") {
+        todosProdutos.filter { it.vendedorId == usuario.uid }
+    } else {
+        todosProdutos
+    }
     Scaffold(
         topBar = {
             TopAppBar(
@@ -43,7 +48,7 @@ fun ProdutoListScreen(
             )
         },
         floatingActionButton = {
-            if (usuario.perfil == "negociante") {
+            if (usuario.perfil == "negociador") {
                 FloatingActionButton(onClick = onCriarProduto) {
                     Icon(Icons.Filled.Add, contentDescription = "Criar produto")
                 }

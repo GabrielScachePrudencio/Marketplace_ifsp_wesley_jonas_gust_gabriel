@@ -1,8 +1,7 @@
 package com.example.marketplace.data.dao
 
-import android.service.autofill.OnClickAction
+
 import androidx.room.Dao
-import androidx.room.Database
 import androidx.room.Delete
 import androidx.room.Insert
 import androidx.room.OnConflictStrategy
@@ -24,4 +23,9 @@ interface UsuarioDao {
     @Delete
     suspend fun deletar(usuario: Usuario)
 
+    @Query("UPDATE usuarios SET negocianteId = :negocianteId WHERE uid = :uid")
+    suspend fun vincularNegociante(uid: String, negocianteId: String)
+
+    @Query("SELECT * FROM usuarios WHERE perfil = :perfil")
+    suspend fun listarPorPerfil(perfil: String): List<Usuario>
 }

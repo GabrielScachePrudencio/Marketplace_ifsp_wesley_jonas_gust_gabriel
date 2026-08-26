@@ -16,4 +16,4 @@ data class Veiculo(
     val cor: String = "",
     val dataCriacao: LocalDateTime = LocalDateTime.now()
 
-)
+) 
