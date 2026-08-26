@@ -11,5 +11,11 @@ data class Usuario(
     val email: String = "",
     val perfil: String = "",
     val cpf: String = "",
+    val rua: String = "",
+    val numero: String = "",
+    val cidade: String = "",
+    val estado: String = "",
+    val cep: String = "",
+    val negocianteId: String? = null,
     val dataCriacao: LocalDateTime = LocalDateTime.now()
 )

@@ -36,12 +36,92 @@ class UsuarioRepository(private val usuarioDao: UsuarioDao) {
 
     suspend fun carregarUsuarioAtual(): Usuario? {
         val uid = usuarioAtual()?.uid ?: return null
+
         return try {
-            buscarUsuarioPorUid(uid)
+
+            // 1. Primeiro procura no banco local
+            val usuarioLocal =
+                usuarioDao.buscarPorId(uid)
+
+            if (usuarioLocal != null) {
+                return usuarioLocal
+            }
+
+            // 2. Se não encontrou localmente,
+            // busca no Firebase
+            val usuarioFirebase =
+                buscarUsuarioPorUid(uid)
+
+            // 3. Salva no banco local
+            usuarioDao.insert(usuarioFirebase)
+
+            usuarioFirebase
+
         } catch (e: Exception) {
-            Log.d("MP_DEBUG", "Falha ao restaurar sessão: ${e.message}")
+
+            Log.d(
+                "MP_DEBUG",
+                "Falha ao restaurar sessão: ${e.message}"
+            )
+
             null
         }
+    }
+
+    suspend fun cadastrar(
+        nome: String,
+        email: String,
+        senha: String,
+        perfil: String,
+        cpf: String,
+        rua: String,
+        numero: String,
+        cidade: String,
+        estado: String,
+        cep: String
+    ): Usuario {
+        var result = FirebaseService.auth.createUserWithEmailAndPassword(email, senha).await()
+
+        val uid = result.user?.uid ?: throw Exception("UID NAO CONTRANDO APOS CADASTRAR")
+
+        val usuario = Usuario(
+            uid = uid,
+            nome = nome,
+            email = email,
+            perfil = perfil,
+            cpf = cpf,
+            rua = rua,
+            numero = numero,
+            cidade = cidade,
+            estado = estado,
+            cep = cep,
+            dataCriacao = LocalDateTime.now()
+        )
+
+        val dadosFirestore = mapOf(
+            "uid" to usuario.uid,
+            "nome" to usuario.nome,
+            "email" to usuario.email,
+            "perfil" to usuario.perfil,
+            "cpf" to usuario.cpf,
+            "rua" to usuario.rua,
+            "numero" to usuario.numero,
+            "cidade" to usuario.cidade,
+            "estado" to usuario.estado,
+            "cep" to usuario.cep,
+            "negocianteId" to usuario.negocianteId,
+            "dataCriacao" to usuario.dataCriacao.toEpochSecond(ZoneOffset.UTC) * 1000
+        )
+
+        FirebaseService.firestore
+            .collection("usuarios")
+            .document(uid)
+            .set(dadosFirestore)
+            .await()
+
+        usuarioDao.insert(usuario)
+
+        return usuario
     }
 
     private suspend fun buscarUsuarioPorUid(uid: String): Usuario {
@@ -67,7 +147,13 @@ class UsuarioRepository(private val usuarioDao: UsuarioDao) {
             cpf = doc.getString("cpf") ?: "",
             dataCriacao = dataCriacaoMillis?.let {
                 LocalDateTime.ofEpochSecond(it / 1000, ((it % 1000) * 1_000_000).toInt(), ZoneOffset.UTC)
-            } ?: LocalDateTime.now()
+            } ?: LocalDateTime.now(),
+            rua = doc.getString("rua") ?: "",
+            numero = doc.getString("numero") ?: "",
+            cidade = doc.getString("cidade") ?: "",
+            estado = doc.getString("estado") ?: "",
+            cep = doc.getString("cep") ?: "",
+            negocianteId = doc.getString("negocianteId"),
         )
     }
 
@@ -104,7 +190,32 @@ class UsuarioRepository(private val usuarioDao: UsuarioDao) {
 
         return usuario
     }
+    suspend fun listarNegociantes(): List<Usuario> {
+        return FirebaseService.firestore
+            .collection("usuarios")
+            .whereEqualTo("perfil", "negociador")
+            .get()
+            .await()
+            .documents
+            .mapNotNull { doc ->
+                Usuario(
+                    uid = doc.id,
+                    nome = doc.getString("nome") ?: "",
+                    email = doc.getString("email") ?: "",
+                    perfil = doc.getString("perfil") ?: ""
+                )
+            }
+    }
 
+    suspend fun vincularNegociante(motoristaUid: String, negocianteId: String) {
+        FirebaseService.firestore
+            .collection("usuarios")
+            .document(motoristaUid)
+            .update("negocianteId", negocianteId)
+            .await()
+
+        usuarioDao.vincularNegociante(motoristaUid, negocianteId)
+    }
     suspend fun buscarUsuarioLocal(uid: String): Usuario? {
         return usuarioDao.buscarPorId(uid)
     }
