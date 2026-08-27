@@ -111,12 +111,18 @@ class MarketplaceRepositoriesInstrumentedTest {
         val produtoAposVenda = produtoRepository.buscarProdutoPorId(produto.id)
         assertEquals(1, produtoAposVenda!!.quantidade)
 
-        val emTransporte = vendaRepository.atualizarStatusVenda(venda.id, "EM_TRANSPORTE")
-        assertEquals("EM_TRANSPORTE", emTransporte.status)
+        val pronto = vendaRepository.atualizarStatusVenda(venda.id, "PRONTO_PARA_ENTREGA")
+        assertEquals("PRONTO_PARA_ENTREGA", pronto.status)
+
+        val aCaminho = vendaRepository.atualizarStatusVenda(venda.id, "A_CAMINHO")
+        assertEquals("A_CAMINHO", aCaminho.status)
+
+        val entregue = vendaRepository.atualizarStatusVenda(venda.id, "ENTREGUE")
+        assertEquals("ENTREGUE", entregue.status)
 
         try {
             vendaRepository.atualizarStatusVenda(venda.id, "PENDENTE")
-            fail("Deveria rejeitar transição EM_TRANSPORTE -> PENDENTE")
+            fail("Deveria rejeitar transição ENTREGUE -> PENDENTE direta")
         } catch (e: IllegalArgumentException) {
             // esperado
         }
