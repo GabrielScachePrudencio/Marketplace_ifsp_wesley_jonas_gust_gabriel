@@ -244,53 +244,80 @@ private fun MotoristaEntregaCard(
             Spacer(Modifier.height(12.dp))
 
             when (status) {
-                StatusEntrega.PRONTO_PARA_ENTREGA -> {
-                    Button(
-                        onClick = { onAtualizarStatus(StatusEntrega.A_CAMINHO.name) },
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Text("Coletar e Iniciar Entrega (A caminho)")
-                    }
-                }
-
-                StatusEntrega.A_CAMINHO -> {
-                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        Button(
-                            onClick = { onAtualizarStatus(StatusEntrega.ENTREGUE.name) },
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Text("Confirmar Entrega ao Cliente")
-                        }
-                        OutlinedButton(
-                            onClick = { onAtualizarStatus(StatusEntrega.PRONTO_PARA_ENTREGA.name) },
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Text("Cancelar Coleta / Devolver para Loja")
-                        }
-                    }
-                }
-
-                StatusEntrega.ENTREGUE -> {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            "Entrega Concluída ✓",
-                            style = MaterialTheme.typography.bodyMedium,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.primary
-                        )
-                        OutlinedButton(
-                            onClick = { onAtualizarStatus(StatusEntrega.A_CAMINHO.name) }
-                        ) {
-                            Text("Desfazer Entrega")
-                        }
-                    }
-                }
-
-            }
-        }
-    }
+StatusEntrega.PENDENTE -> {
+Text(
+"Pedido pendente. Aguardando liberação para entrega.",
+style = MaterialTheme.typography.bodySmall
+)
 }
+
+StatusEntrega.PRONTO_PARA_ENTREGA -> {
+Button(
+onClick = {
+onAtualizarStatus(StatusEntrega.A_CAMINHO.name)
+},
+modifier = Modifier.fillMaxWidth()
+) {
+Text("Coletar e Iniciar Entrega (A caminho)")
+}
+}
+
+StatusEntrega.A_CAMINHO -> {
+Column(
+verticalArrangement = Arrangement.spacedBy(6.dp)
+) {
+Button(
+onClick = {
+onAtualizarStatus(StatusEntrega.ENTREGUE.name)
+},
+modifier = Modifier.fillMaxWidth()
+) {
+Text("Confirmar Entrega ao Cliente")
+}
+
+OutlinedButton(
+onClick = {
+onAtualizarStatus(StatusEntrega.PRONTO_PARA_ENTREGA.name)
+},
+modifier = Modifier.fillMaxWidth()
+) {
+Text("Cancelar Coleta / Devolver para Loja")
+}
+}
+}
+
+StatusEntrega.ENTREGUE -> {
+Row(
+modifier = Modifier.fillMaxWidth(),
+horizontalArrangement = Arrangement.SpaceBetween,
+verticalAlignment = Alignment.CenterVertically
+) {
+Text(
+"Entrega Concluída ✓",
+style = MaterialTheme.typography.bodyMedium,
+fontWeight = FontWeight.Bold,
+color = MaterialTheme.colorScheme.primary
+)
+
+OutlinedButton(
+onClick = {
+onAtualizarStatus(StatusEntrega.A_CAMINHO.name)
+}
+) {
+Text("Desfazer Entrega")
+}
+}
+}
+
+StatusEntrega.CANCELADA -> {
+Text(
+"Pedido cancelado. Nenhuma ação de entrega disponível.",
+style = MaterialTheme.typography.bodySmall,
+color = MaterialTheme.colorScheme.error
+)
+}
+}
+}
+}
+}
+
