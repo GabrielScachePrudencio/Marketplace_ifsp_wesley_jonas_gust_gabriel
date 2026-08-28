@@ -27,17 +27,34 @@ class VendaListViewModel(
     private val _statusUiState = MutableStateFlow<AtualizarStatusUiState>(AtualizarStatusUiState.Idle)
     val statusUiState: StateFlow<AtualizarStatusUiState> = _statusUiState
 
-    fun avancarStatus(vendaId: String, novoStatus: String) {
+    fun avancarStatus(
+        vendaId: String,
+        novoStatus: String,
+        perfil: String? = null,
+        motoristaId: String? = null
+    ) {
         viewModelScope.launch {
             _statusUiState.value = AtualizarStatusUiState.Loading
             try {
-                repository.atualizarStatusVenda(vendaId, novoStatus)
+                repository.atualizarStatusVenda(
+                    id = vendaId,
+                    novoStatus = novoStatus,
+                    perfil = perfil,
+                    motoristaId = motoristaId
+                )
                 _statusUiState.value = AtualizarStatusUiState.Sucesso
             } catch (e: Exception) {
                 _statusUiState.value = AtualizarStatusUiState.Erro(e.message ?: "Erro ao atualizar status")
             }
         }
     }
+
+    fun atualizarStatus(
+        vendaId: String,
+        novoStatus: String,
+        perfil: String? = null,
+        motoristaId: String? = null
+    ) = avancarStatus(vendaId, novoStatus, perfil, motoristaId)
 
     fun resetarStatus() {
         _statusUiState.value = AtualizarStatusUiState.Idle

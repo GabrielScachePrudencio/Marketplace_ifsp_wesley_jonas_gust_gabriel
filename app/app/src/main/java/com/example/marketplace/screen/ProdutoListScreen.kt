@@ -39,10 +39,11 @@ fun ProdutoListScreen(
     }
     Scaffold(
         topBar = {
+            val textoMinhasVendas = if (usuario.perfil == "comprador") "Minhas compras" else "Minhas vendas"
             TopAppBar(
                 title = { Text("MarketPlace IFSP") },
                 actions = {
-                    TextButton(onClick = onMinhasVendas) { Text("Minhas vendas") }
+                    TextButton(onClick = onMinhasVendas) { Text(textoMinhasVendas) }
                     TextButton(onClick = onLogout) { Text("Sair") }
                 }
             )

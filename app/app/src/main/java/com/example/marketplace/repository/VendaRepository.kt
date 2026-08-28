@@ -54,11 +54,25 @@ class VendaRepository(
         return venda
     }
 
-    suspend fun atualizarStatusVenda(id: String, novoStatus: String): Venda {
+    suspend fun atualizarStatusVenda(
+        id: String,
+        novoStatus: String,
+        perfil: String? = null,
+        motoristaId: String? = null
+    ): Venda {
         val venda = buscarVendaPorId(id) ?: throw Exception("Venda não encontrada")
-        VendaRegras.validarTransicao(venda.status, novoStatus)
+        VendaRegras.validarTransicao(venda.status, novoStatus, perfil)
 
-        val atualizada = venda.copy(status = novoStatus)
+        val novoMotoristaId = if (!motoristaId.isNullOrBlank()) {
+            motoristaId
+        } else {
+            venda.motoristaId
+        }
+
+        val atualizada = venda.copy(
+            status = novoStatus,
+            motoristaId = novoMotoristaId
+        )
         salvarNoFirestore(atualizada)
         vendaDao.update(atualizada)
 

@@ -14,8 +14,10 @@ data class Venda(
     val quantidade: Int = 0,
     val valorUnitario: Double = 0.0,
     val valorTotal: Double = 0.0,
-    val status: String = "PENDENTE",
+    val status: String = StatusEntrega.PENDENTE.name,
     val data: Long = 0L,
     val dataCriacao: LocalDateTime = LocalDateTime.now()
-
-)
+) {
+    val statusEntrega: StatusEntrega
+        get() = StatusEntrega.deString(status)
+}
