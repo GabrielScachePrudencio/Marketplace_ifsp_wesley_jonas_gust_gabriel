@@ -11,7 +11,9 @@ import com.example.marketplace.model.enums.TipoPendenteSyncronizacao
 import com.example.marketplace.service.FirebaseService
 import com.google.firebase.firestore.DocumentSnapshot
 import com.google.gson.Gson
+import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.tasks.await
 import kotlinx.coroutines.withTimeoutOrNull
 import java.time.LocalDateTime
@@ -23,6 +25,8 @@ class ProdutoRepository(
 
     private val colecao = FirebaseService.firestore.collection("produtos")
     private val gson = Gson()
+
+    // ===== ESCRITA — sem mudanças, continua igual (já está funcionando) =====
 
     suspend fun criarProduto(
         vendedorId: String,
@@ -48,7 +52,6 @@ class ProdutoRepository(
         )
 
         val sucesso = salvarNoFirestore(produto)
-
         produtoDao.insert(produto)
 
         if (!sucesso) {
@@ -69,7 +72,6 @@ class ProdutoRepository(
         ProdutoRegras.validar(produto.titulo, produto.descricao, produto.categoria, produto.preco, produto.quantidade, produto.vendedorId)
 
         val sucesso = salvarNoFirestore(produto)
-
         produtoDao.update(produto)
 
         if (!sucesso) {
@@ -108,34 +110,33 @@ class ProdutoRepository(
         }
     }
 
-    /** Busca local primeiro (Room); só cai pro Firestore se não achar, e trata offline */
-    suspend fun buscarProdutoPorId(id: String): Produto? {
-        produtoDao.buscarPorId(id)?.let { return it }
+    // ===== LEITURA — agora sempre tenta Firebase primeiro =====
 
+    /** Busca por id: Firestore primeiro; só cai pro Room se estiver offline/der erro */
+    suspend fun buscarProdutoPorId(id: String): Produto? {
         return try {
             val doc = colecao.document(id).get().await()
             if (!doc.exists()) return null
-
             val produto = produtoDeDocumento(doc)
-            produtoDao.insert(produto)
+            produtoDao.insert(produto) // atualiza cache local
             produto
         } catch (e: Exception) {
-            // offline e sem cache local: não tem como recuperar esse produto agora
-            null
+            // offline: usa o que tiver salvo localmente como último recurso
+            produtoDao.buscarPorId(id)
         }
     }
 
-    /** Lista local (Room) — vitrine offline-first */
-    fun buscarProdutos(): Flow<List<Produto>> = produtoDao.listarTodos()
-
-    /** Sincroniza Firestore -> Room (chamar ao entrar na tela / puxar pra atualizar) */
-    suspend fun sincronizarProdutos() {
-        val snapshot = colecao.get().await()
-        for (doc in snapshot.documents) {
-            if (doc.exists()) {
-                produtoDao.insert(produtoDeDocumento(doc))
+    /** Lista em tempo real DIRETO do Firestore — não depende do Room pra exibir */
+    fun buscarProdutos(): Flow<List<Produto>> = callbackFlow {
+        val listener = colecao.addSnapshotListener { snapshot, erro ->
+            if (erro != null) {
+                // Firestore indisponível: não fecha o flow, só ignora esse evento
+                return@addSnapshotListener
             }
+            val produtos = snapshot?.documents?.map { produtoDeDocumento(it) } ?: emptyList()
+            trySend(produtos)
         }
+        awaitClose { listener.remove() }
     }
 
     private suspend fun salvarNoFirestore(produto: Produto): Boolean {

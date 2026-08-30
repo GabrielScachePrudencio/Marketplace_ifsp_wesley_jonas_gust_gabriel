@@ -11,7 +11,9 @@ import com.example.marketplace.model.enums.TipoPendenteSyncronizacao
 import com.example.marketplace.service.FirebaseService
 import com.google.firebase.firestore.DocumentSnapshot
 import com.google.gson.Gson
+import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.tasks.await
 import kotlinx.coroutines.withTimeoutOrNull
 import java.time.LocalDateTime
@@ -34,19 +36,16 @@ class AvaliacaoProdutoRepository(
 
         val id = "${produtoId}_$usuarioId"
 
-        // 1. Checa duplicidade: local primeiro (não depende de internet)
-        val jaAvaliouLocal = avaliacaoDao.buscarPorId(id) != null
-        if (jaAvaliouLocal) throw Exception("Você já avaliou este produto")
-
-        // 2. Só confirma no Firestore se tiver internet; se estiver offline, segue sem bloquear
-        val existeNoFirestore = withTimeoutOrNull(5000) {
+        // Checagem de duplicidade: Firestore primeiro, cai pro local se offline
+        val jaAvaliou = withTimeoutOrNull(5000) {
             try {
                 colecao.document(id).get().await().exists()
             } catch (e: Exception) {
-                null // offline / erro: não conseguimos confirmar, não bloqueia o usuário
+                null
             }
-        }
-        if (existeNoFirestore == true) throw Exception("Você já avaliou este produto")
+        } ?: (avaliacaoDao.buscarPorId(id) != null)
+
+        if (jaAvaliou) throw Exception("Você já avaliou este produto")
 
         val avaliacao = AvaliacaoProduto(
             id = id,
@@ -100,9 +99,8 @@ class AvaliacaoProdutoRepository(
         }
     }
 
+    /** Firestore primeiro; só cai pro Room se estiver offline/der erro */
     suspend fun buscarAvaliacaoPorId(id: String): AvaliacaoProduto? {
-        avaliacaoDao.buscarPorId(id)?.let { return it }
-
         return try {
             val doc = colecao.document(id).get().await()
             if (!doc.exists()) return null
@@ -110,25 +108,19 @@ class AvaliacaoProdutoRepository(
             avaliacaoDao.insert(avaliacao)
             avaliacao
         } catch (e: Exception) {
-            null
+            avaliacaoDao.buscarPorId(id)
         }
     }
 
-    fun buscarAvaliacoesDoProduto(produtoId: String): Flow<List<AvaliacaoProduto>> =
-        avaliacaoDao.listarPorProduto(produtoId)
-
-    /** Sincroniza Firestore -> Room (chamar ao entrar na tela / puxar pra atualizar) */
-    suspend fun sincronizarAvaliacoesDoProduto(produtoId: String) {
-        try {
-            val snapshot = colecao.whereEqualTo("produtoId", produtoId).get().await()
-            for (doc in snapshot.documents) {
-                if (doc.exists()) {
-                    avaliacaoDao.insert(avaliacaoDeDocumento(doc))
-                }
+    /** Lista em tempo real DIRETO do Firestore */
+    fun buscarAvaliacoesDoProduto(produtoId: String): Flow<List<AvaliacaoProduto>> = callbackFlow {
+        val listener = colecao
+            .whereEqualTo("produtoId", produtoId)
+            .addSnapshotListener { snapshot, erro ->
+                if (erro != null) return@addSnapshotListener
+                trySend(snapshot?.documents?.map { avaliacaoDeDocumento(it) } ?: emptyList())
             }
-        } catch (e: Exception) {
-            // offline: mantém o que já tem localmente
-        }
+        awaitClose { listener.remove() }
     }
 
     private suspend fun salvarNoFirestore(avaliacao: AvaliacaoProduto): Boolean {

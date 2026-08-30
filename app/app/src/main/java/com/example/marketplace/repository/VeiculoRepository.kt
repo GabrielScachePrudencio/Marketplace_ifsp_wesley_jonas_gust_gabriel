@@ -110,41 +110,37 @@ class VeiculoRepository(
         }
     }
 
+    /** Firestore primeiro; só cai pro Room se estiver offline/der erro */
     suspend fun buscarVeiculoPorId(id: String): Veiculo? {
-        veiculoDao.buscarPorId(id)?.let { return it }
-
-        val doc = colecao.document(id).get().await()
-        if (!doc.exists()) return null
-
-        val veiculo = veiculoDeDocumento(doc)
-        veiculoDao.insert(veiculo)
-        return veiculo
-    }
-
-    /** Lista local (Room) — vitrine offline-first */
-    fun buscarVeiculos(): Flow<List<Veiculo>> = veiculoDao.listarTodos()
-
-    /** Lista local (Room) filtrada por motorista */
-    fun buscarVeiculosDoMotorista(motoristaId: String): Flow<List<Veiculo>> =
-        veiculoDao.listarPorMotorista(motoristaId)
-
-    /** Sincroniza Firestore -> Room (chamar ao entrar na tela / puxar pra atualizar) */
-    suspend fun sincronizarVeiculos() {
-        val snapshot = colecao.get().await()
-        for (doc in snapshot.documents) {
-            if (doc.exists()) {
-                veiculoDao.insert(veiculoDeDocumento(doc))
-            }
+        return try {
+            val doc = colecao.document(id).get().await()
+            if (!doc.exists()) return null
+            val veiculo = veiculoDeDocumento(doc)
+            veiculoDao.insert(veiculo)
+            veiculo
+        } catch (e: Exception) {
+            veiculoDao.buscarPorId(id)
         }
     }
 
-    suspend fun sincronizarVeiculosDoMotorista(motoristaId: String) {
-        val snapshot = colecao.whereEqualTo("motoristaId", motoristaId).get().await()
-        for (doc in snapshot.documents) {
-            if (doc.exists()) {
-                veiculoDao.insert(veiculoDeDocumento(doc))
-            }
+    /** Lista em tempo real DIRETO do Firestore */
+    fun buscarVeiculos(): Flow<List<Veiculo>> = callbackFlow {
+        val listener = colecao.addSnapshotListener { snapshot, erro ->
+            if (erro != null) return@addSnapshotListener
+            trySend(snapshot?.documents?.map { veiculoDeDocumento(it) } ?: emptyList())
         }
+        awaitClose { listener.remove() }
+    }
+
+    /** Lista de um motorista, em tempo real DIRETO do Firestore */
+    fun buscarVeiculosDoMotorista(motoristaId: String): Flow<List<Veiculo>> = callbackFlow {
+        val listener = colecao
+            .whereEqualTo("motoristaId", motoristaId)
+            .addSnapshotListener { snapshot, erro ->
+                if (erro != null) return@addSnapshotListener
+                trySend(snapshot?.documents?.map { veiculoDeDocumento(it) } ?: emptyList())
+            }
+        awaitClose { listener.remove() }
     }
 
     private suspend fun salvarNoFirestore(veiculo: Veiculo): Boolean {

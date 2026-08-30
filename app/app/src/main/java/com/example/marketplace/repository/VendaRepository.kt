@@ -11,7 +11,9 @@ import com.example.marketplace.model.enums.TipoPendenteSyncronizacao
 import com.example.marketplace.service.FirebaseService
 import com.google.firebase.firestore.DocumentSnapshot
 import com.google.gson.Gson
+import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.tasks.await
 import kotlinx.coroutines.withTimeoutOrNull
 import java.time.LocalDateTime
@@ -108,28 +110,26 @@ class VendaRepository(
         return atualizada
     }
 
+    /** Firestore primeiro; só cai pro Room se estiver offline/der erro */
     suspend fun buscarVendaPorId(id: String): Venda? {
-        vendaDao.buscarPorId(id)?.let { return it }
-
-        val doc = colecao.document(id).get().await()
-        if (!doc.exists()) return null
-
-        val venda = vendaDeDocumento(doc)
-        vendaDao.insert(venda)
-        return venda
+        return try {
+            val doc = colecao.document(id).get().await()
+            if (!doc.exists()) return null
+            val venda = vendaDeDocumento(doc)
+            vendaDao.insert(venda)
+            venda
+        } catch (e: Exception) {
+            vendaDao.buscarPorId(id)
+        }
     }
 
-    /** Lista local (Room) — vitrine offline-first */
-    fun buscarVendas(): Flow<List<Venda>> = vendaDao.listarTodos()
-
-    /** Sincroniza Firestore -> Room (chamar ao entrar na tela / puxar pra atualizar) */
-    suspend fun sincronizarVendas() {
-        val snapshot = colecao.get().await()
-        for (doc in snapshot.documents) {
-            if (doc.exists()) {
-                vendaDao.insert(vendaDeDocumento(doc))
-            }
+    /** Lista em tempo real DIRETO do Firestore */
+    fun buscarVendas(): Flow<List<Venda>> = callbackFlow {
+        val listener = colecao.addSnapshotListener { snapshot, erro ->
+            if (erro != null) return@addSnapshotListener
+            trySend(snapshot?.documents?.map { vendaDeDocumento(it) } ?: emptyList())
         }
+        awaitClose { listener.remove() }
     }
 
     private suspend fun salvarNoFirestore(venda: Venda): Boolean {

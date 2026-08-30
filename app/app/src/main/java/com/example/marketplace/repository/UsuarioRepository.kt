@@ -46,26 +46,17 @@ class UsuarioRepository(
 
     fun usuarioAtual() = FirebaseService.auth.currentUser
 
+    /** Firestore primeiro; só cai pro Room se estiver offline/der erro */
     suspend fun carregarUsuarioAtual(): Usuario? {
         val uid = usuarioAtual()?.uid ?: return null
 
         return try {
-            // 1. Primeiro procura no banco local
-            val usuarioLocal = usuarioDao.buscarPorId(uid)
-            if (usuarioLocal != null) {
-                return usuarioLocal
-            }
-
-            // 2. Se não encontrou localmente, busca no Firebase
             val usuarioFirebase = buscarUsuarioPorUid(uid)
-
-            // 3. Salva no banco local
-            usuarioDao.insert(usuarioFirebase)
-
+            usuarioDao.insert(usuarioFirebase) // atualiza cache local
             usuarioFirebase
         } catch (e: Exception) {
-            Log.d("MP_DEBUG", "Falha ao restaurar sessão: ${e.message}")
-            null
+            Log.d("MP_DEBUG", "Firestore indisponível, tentando local: ${e.message}")
+            usuarioDao.buscarPorId(uid)
         }
     }
 
@@ -81,7 +72,6 @@ class UsuarioRepository(
         estado: String,
         cep: String
     ): Usuario {
-        // criação de conta no Auth exige rede, não tem como isso ser feito offline
         val result = FirebaseService.auth.createUserWithEmailAndPassword(email, senha).await()
 
         val uid = result.user?.uid ?: throw Exception("UID NAO CONTRANDO APOS CADASTRAR")

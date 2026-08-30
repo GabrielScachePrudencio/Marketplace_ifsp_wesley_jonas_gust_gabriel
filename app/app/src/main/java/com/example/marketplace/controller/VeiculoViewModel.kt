@@ -146,7 +146,7 @@ class VeiculoViewModel(
 
 
     // =========================================================
-    // CARREGAR VEÍCULOS DO MOTORISTA
+    // CARREGAR VEÍCULOS DO MOTORISTA (tempo real, via Firestore)
     // =========================================================
 
     fun carregarVeiculosDoMotorista(
@@ -181,43 +181,6 @@ class VeiculoViewModel(
             }
         }
     }
-
-
-    // =========================================================
-    // SINCRONIZAR FIREBASE -> LOCAL
-    // =========================================================
-
-    fun sincronizarECarregarVeiculos(
-        motoristaId: String
-    ) {
-        viewModelScope.launch {
-
-            try {
-
-                repository.sincronizarVeiculosDoMotorista(
-                    motoristaId
-                )
-
-                repository
-                    .buscarVeiculosDoMotorista(
-                        motoristaId
-                    )
-                    .collect { lista ->
-
-                        _veiculos.value = lista
-                    }
-
-            } catch (e: Exception) {
-
-                _uiState.value =
-                    VeiculoUiState.Erro(
-                        e.message
-                            ?: "Erro ao carregar veículos"
-                    )
-            }
-        }
-    }
-
 
 
     // =========================================================
