@@ -19,7 +19,8 @@ class VeiculoViewModelFactory(
 
         val repository =
             VeiculoRepository(
-                db.veiculoDao()
+                db.veiculoDao(),
+                db.pendenteSycronizacaoDao()
             )
 
         @Suppress("UNCHECKED_CAST")

@@ -1,21 +1,29 @@
 package com.example.marketplace.data.repository
 
+import com.example.marketplace.data.dao.PendenteSycronizacaoDao
 import com.example.marketplace.data.dao.VendaDao
 import com.example.marketplace.data.local.FirestoreDateConverter
 import com.example.marketplace.domain.VendaRegras
+import com.example.marketplace.model.PendenteSycronizacao
 import com.example.marketplace.model.Venda
+import com.example.marketplace.model.enums.OperacaoPendente
+import com.example.marketplace.model.enums.TipoPendenteSyncronizacao
 import com.example.marketplace.service.FirebaseService
 import com.google.firebase.firestore.DocumentSnapshot
+import com.google.gson.Gson
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.tasks.await
+import kotlinx.coroutines.withTimeoutOrNull
 import java.time.LocalDateTime
 
 class VendaRepository(
     private val vendaDao: VendaDao,
+    private val pendenteSycronizacaoDao: PendenteSycronizacaoDao,
     private val produtoRepository: ProdutoRepository
 ) {
 
     private val colecao = FirebaseService.firestore.collection("vendas")
+    private val gson = Gson()
 
     suspend fun criarVenda(
         compradorId: String,
@@ -46,8 +54,20 @@ class VendaRepository(
             dataCriacao = LocalDateTime.now()
         )
 
-        salvarNoFirestore(venda)
+        val sucesso = salvarNoFirestore(venda)
+
         vendaDao.insert(venda)
+
+        if (!sucesso) {
+            pendenteSycronizacaoDao.inserir(
+                PendenteSycronizacao(
+                    id = venda.id,
+                    tipo = TipoPendenteSyncronizacao.VENDAS,
+                    operacao = OperacaoPendente.CREATE,
+                    payloadJson = gson.toJson(venda)
+                )
+            )
+        }
 
         produtoRepository.atualizarProduto(produto.copy(quantidade = produto.quantidade - quantidade))
 
@@ -63,18 +83,27 @@ class VendaRepository(
         val venda = buscarVendaPorId(id) ?: throw Exception("Venda não encontrada")
         VendaRegras.validarTransicao(venda.status, novoStatus, perfil)
 
-        val novoMotoristaId = if (!motoristaId.isNullOrBlank()) {
-            motoristaId
-        } else {
-            venda.motoristaId
-        }
+        val novoMotoristaId = if (!motoristaId.isNullOrBlank()) motoristaId else venda.motoristaId
 
         val atualizada = venda.copy(
             status = novoStatus,
             motoristaId = novoMotoristaId
         )
-        salvarNoFirestore(atualizada)
+
+        val sucesso = salvarNoFirestore(atualizada)
+
         vendaDao.update(atualizada)
+
+        if (!sucesso) {
+            pendenteSycronizacaoDao.inserir(
+                PendenteSycronizacao(
+                    id = atualizada.id,
+                    tipo = TipoPendenteSyncronizacao.VENDAS,
+                    operacao = OperacaoPendente.UPDATE,
+                    payloadJson = gson.toJson(atualizada)
+                )
+            )
+        }
 
         return atualizada
     }
@@ -84,12 +113,26 @@ class VendaRepository(
 
         val doc = colecao.document(id).get().await()
         if (!doc.exists()) return null
-        return vendaDeDocumento(doc)
+
+        val venda = vendaDeDocumento(doc)
+        vendaDao.insert(venda)
+        return venda
     }
 
+    /** Lista local (Room) — vitrine offline-first */
     fun buscarVendas(): Flow<List<Venda>> = vendaDao.listarTodos()
 
-    private suspend fun salvarNoFirestore(venda: Venda) {
+    /** Sincroniza Firestore -> Room (chamar ao entrar na tela / puxar pra atualizar) */
+    suspend fun sincronizarVendas() {
+        val snapshot = colecao.get().await()
+        for (doc in snapshot.documents) {
+            if (doc.exists()) {
+                vendaDao.insert(vendaDeDocumento(doc))
+            }
+        }
+    }
+
+    private suspend fun salvarNoFirestore(venda: Venda): Boolean {
         val dados = mapOf(
             "compradorId" to venda.compradorId,
             "vendedorId" to venda.vendedorId,
@@ -102,7 +145,15 @@ class VendaRepository(
             "data" to venda.data,
             "dataCriacao" to FirestoreDateConverter.paraMillis(venda.dataCriacao)
         )
-        colecao.document(venda.id).set(dados).await()
+
+        return withTimeoutOrNull(5000) {
+            try {
+                colecao.document(venda.id).set(dados).await()
+                true
+            } catch (e: Exception) {
+                false
+            }
+        } ?: false
     }
 
     private fun vendaDeDocumento(doc: DocumentSnapshot): Venda {

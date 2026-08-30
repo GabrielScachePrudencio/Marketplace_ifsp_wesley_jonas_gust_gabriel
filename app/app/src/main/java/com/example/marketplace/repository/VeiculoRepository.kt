@@ -1,26 +1,30 @@
 package com.example.marketplace.data.repository
 
+import com.example.marketplace.data.dao.PendenteSycronizacaoDao
 import com.example.marketplace.data.dao.VeiculoDao
 import com.example.marketplace.data.local.FirestoreDateConverter
 import com.example.marketplace.domain.VeiculoRegras
+import com.example.marketplace.model.PendenteSycronizacao
 import com.example.marketplace.model.Veiculo
+import com.example.marketplace.model.enums.OperacaoPendente
+import com.example.marketplace.model.enums.TipoPendenteSyncronizacao
 import com.example.marketplace.service.FirebaseService
 import com.google.firebase.firestore.DocumentSnapshot
+import com.google.gson.Gson
+import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.tasks.await
+import kotlinx.coroutines.withTimeoutOrNull
 import java.time.LocalDateTime
 
 class VeiculoRepository(
-    private val veiculoDao: VeiculoDao
+    private val veiculoDao: VeiculoDao,
+    private val pendenteSycronizacaoDao: PendenteSycronizacaoDao
 ) {
 
-    private val colecao =
-        FirebaseService.firestore.collection("veiculos")
-
-
-    // =========================================================
-    // CADASTRAR
-    // =========================================================
+    private val colecao = FirebaseService.firestore.collection("veiculos")
+    private val gson = Gson()
 
     suspend fun cadastrarVeiculo(
         motoristaId: String,
@@ -31,12 +35,7 @@ class VeiculoRepository(
         placa: String,
         cor: String
     ): Veiculo {
-
-        VeiculoRegras.validar(
-            motoristaId = motoristaId,
-            placa = placa,
-            ano = ano
-        )
+        VeiculoRegras.validar(motoristaId = motoristaId, placa = placa, ano = ano)
 
         val veiculo = Veiculo(
             id = colecao.document().id,
@@ -50,274 +49,137 @@ class VeiculoRepository(
             dataCriacao = LocalDateTime.now()
         )
 
-        // Primeiro salva no Firebase
-        salvarNoFirestore(veiculo)
+        val sucesso = salvarNoFirestore(veiculo)
 
-        // Depois salva no banco local
         veiculoDao.insert(veiculo)
+
+        if (!sucesso) {
+            pendenteSycronizacaoDao.inserir(
+                PendenteSycronizacao(
+                    id = veiculo.id,
+                    tipo = TipoPendenteSyncronizacao.VEICULOS,
+                    operacao = OperacaoPendente.CREATE,
+                    payloadJson = gson.toJson(veiculo)
+                )
+            )
+        }
 
         return veiculo
     }
 
+    suspend fun atualizarVeiculo(veiculo: Veiculo) {
+        VeiculoRegras.validar(motoristaId = veiculo.motoristaId, placa = veiculo.placa, ano = veiculo.ano)
 
-    // =========================================================
-    // ATUALIZAR
-    // =========================================================
+        val sucesso = salvarNoFirestore(veiculo)
 
-    suspend fun atualizarVeiculo(
-        veiculo: Veiculo
-    ) {
-
-        VeiculoRegras.validar(
-            motoristaId = veiculo.motoristaId,
-            placa = veiculo.placa,
-            ano = veiculo.ano
-        )
-
-        // Firebase
-        salvarNoFirestore(veiculo)
-
-        // Local
         veiculoDao.update(veiculo)
+
+        if (!sucesso) {
+            pendenteSycronizacaoDao.inserir(
+                PendenteSycronizacao(
+                    id = veiculo.id,
+                    tipo = TipoPendenteSyncronizacao.VEICULOS,
+                    operacao = OperacaoPendente.UPDATE,
+                    payloadJson = gson.toJson(veiculo)
+                )
+            )
+        }
     }
 
+    suspend fun excluirVeiculo(veiculo: Veiculo) {
+        val sucesso = withTimeoutOrNull(5000) {
+            try {
+                colecao.document(veiculo.id).delete().await()
+                true
+            } catch (e: Exception) {
+                false
+            }
+        } ?: false
 
-    // =========================================================
-    // EXCLUIR
-    // =========================================================
-
-    suspend fun excluirVeiculo(
-        veiculo: Veiculo
-    ) {
-
-        // Firebase
-        colecao
-            .document(veiculo.id)
-            .delete()
-            .await()
-
-        // Local
         veiculoDao.deletar(veiculo)
+
+        if (!sucesso) {
+            pendenteSycronizacaoDao.inserir(
+                PendenteSycronizacao(
+                    id = veiculo.id,
+                    tipo = TipoPendenteSyncronizacao.VEICULOS,
+                    operacao = OperacaoPendente.DELETE,
+                    payloadJson = gson.toJson(veiculo)
+                )
+            )
+        }
     }
 
+    suspend fun buscarVeiculoPorId(id: String): Veiculo? {
+        veiculoDao.buscarPorId(id)?.let { return it }
 
-    // =========================================================
-    // BUSCAR POR ID
-    // =========================================================
+        val doc = colecao.document(id).get().await()
+        if (!doc.exists()) return null
 
-    suspend fun buscarVeiculoPorId(
-        id: String
-    ): Veiculo? {
-
-        // Primeiro procura no Room
-        val local =
-            veiculoDao.buscarPorId(id)
-
-        if (local != null) {
-            return local
-        }
-
-        // Se não encontrou localmente,
-        // procura no Firebase
-        val doc =
-            colecao
-                .document(id)
-                .get()
-                .await()
-
-        if (!doc.exists()) {
-            return null
-        }
-
-        val veiculo =
-            veiculoDeDocumento(doc)
-
-        // Salva o resultado no Room
+        val veiculo = veiculoDeDocumento(doc)
         veiculoDao.insert(veiculo)
-
         return veiculo
     }
 
+    /** Lista local (Room) — vitrine offline-first */
+    fun buscarVeiculos(): Flow<List<Veiculo>> = veiculoDao.listarTodos()
 
-    // =========================================================
-    // TODOS OS VEÍCULOS LOCAIS
-    // =========================================================
+    /** Lista local (Room) filtrada por motorista */
+    fun buscarVeiculosDoMotorista(motoristaId: String): Flow<List<Veiculo>> =
+        veiculoDao.listarPorMotorista(motoristaId)
 
-    fun buscarVeiculos(): Flow<List<Veiculo>> {
-        return veiculoDao.listarTodos()
-    }
-
-
-    // =========================================================
-    // VEÍCULOS DE UM MOTORISTA
-    // =========================================================
-
-    fun buscarVeiculosDoMotorista(
-        motoristaId: String
-    ): Flow<List<Veiculo>> {
-
-        return veiculoDao.listarPorMotorista(
-            motoristaId
-        )
-    }
-
-
-    // =========================================================
-    // SINCRONIZAR TODOS
-    // FIREBASE -> ROOM
-    // =========================================================
-
+    /** Sincroniza Firestore -> Room (chamar ao entrar na tela / puxar pra atualizar) */
     suspend fun sincronizarVeiculos() {
-
-        val snapshot =
-            colecao
-                .get()
-                .await()
-
+        val snapshot = colecao.get().await()
         for (doc in snapshot.documents) {
-
             if (doc.exists()) {
-
-                val veiculo =
-                    veiculoDeDocumento(doc)
-
-                veiculoDao.insert(veiculo)
+                veiculoDao.insert(veiculoDeDocumento(doc))
             }
         }
     }
 
-
-    // =========================================================
-    // SINCRONIZAR MOTORISTA
-    // FIREBASE -> ROOM
-    // =========================================================
-
-    suspend fun sincronizarVeiculosDoMotorista(
-        motoristaId: String
-    ) {
-
-        val snapshot =
-            colecao
-                .whereEqualTo(
-                    "motoristaId",
-                    motoristaId
-                )
-                .get()
-                .await()
-
+    suspend fun sincronizarVeiculosDoMotorista(motoristaId: String) {
+        val snapshot = colecao.whereEqualTo("motoristaId", motoristaId).get().await()
         for (doc in snapshot.documents) {
-
             if (doc.exists()) {
-
-                val veiculo =
-                    veiculoDeDocumento(doc)
-
-                veiculoDao.insert(veiculo)
+                veiculoDao.insert(veiculoDeDocumento(doc))
             }
         }
     }
 
-
-    // =========================================================
-    // FIREBASE
-    // =========================================================
-
-    private suspend fun salvarNoFirestore(
-        veiculo: Veiculo
-    ) {
-
+    private suspend fun salvarNoFirestore(veiculo: Veiculo): Boolean {
         val dados = mapOf(
-
-            "motoristaId" to
-                    veiculo.motoristaId,
-
-            "tipo" to
-                    veiculo.tipo,
-
-            "marca" to
-                    veiculo.marca,
-
-            "modelo" to
-                    veiculo.modelo,
-
-            "ano" to
-                    veiculo.ano,
-
-            "placa" to
-                    veiculo.placa,
-
-            "cor" to
-                    veiculo.cor,
-
-            "dataCriacao" to
-                    FirestoreDateConverter
-                        .paraMillis(
-                            veiculo.dataCriacao
-                        )
+            "motoristaId" to veiculo.motoristaId,
+            "tipo" to veiculo.tipo,
+            "marca" to veiculo.marca,
+            "modelo" to veiculo.modelo,
+            "ano" to veiculo.ano,
+            "placa" to veiculo.placa,
+            "cor" to veiculo.cor,
+            "dataCriacao" to FirestoreDateConverter.paraMillis(veiculo.dataCriacao)
         )
 
-        colecao
-            .document(veiculo.id)
-            .set(dados)
-            .await()
+        return withTimeoutOrNull(5000) {
+            try {
+                colecao.document(veiculo.id).set(dados).await()
+                true
+            } catch (e: Exception) {
+                false
+            }
+        } ?: false
     }
 
-
-    // =========================================================
-    // FIRESTORE -> OBJETO VEICULO
-    // =========================================================
-
-    private fun veiculoDeDocumento(
-        doc: DocumentSnapshot
-    ): Veiculo {
-
+    private fun veiculoDeDocumento(doc: DocumentSnapshot): Veiculo {
         return Veiculo(
-
             id = doc.id,
-
-            motoristaId =
-            doc.getString(
-                "motoristaId"
-            ) ?: "",
-
-            tipo =
-            doc.getString(
-                "tipo"
-            ) ?: "",
-
-            marca =
-            doc.getString(
-                "marca"
-            ) ?: "",
-
-            modelo =
-            doc.getString(
-                "modelo"
-            ) ?: "",
-
-            ano =
-            (
-                    doc.getLong("ano")
-                        ?: 0L
-                    ).toInt(),
-
-            placa =
-            doc.getString(
-                "placa"
-            ) ?: "",
-
-            cor =
-            doc.getString(
-                "cor"
-            ) ?: "",
-
-            dataCriacao =
-            FirestoreDateConverter
-                .deMillis(
-                    doc.getLong(
-                        "dataCriacao"
-                    )
-                )
+            motoristaId = doc.getString("motoristaId") ?: "",
+            tipo = doc.getString("tipo") ?: "",
+            marca = doc.getString("marca") ?: "",
+            modelo = doc.getString("modelo") ?: "",
+            ano = (doc.getLong("ano") ?: 0L).toInt(),
+            placa = doc.getString("placa") ?: "",
+            cor = doc.getString("cor") ?: "",
+            dataCriacao = FirestoreDateConverter.deMillis(doc.getLong("dataCriacao"))
         )
     }
 }

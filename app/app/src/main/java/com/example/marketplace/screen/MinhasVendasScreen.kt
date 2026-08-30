@@ -1,6 +1,5 @@
 package com.example.marketplace.screen
 
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -16,7 +15,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.marketplace.controller.VendaListViewModel
 import com.example.marketplace.controller.VendaListViewModelFactory
-import com.example.marketplace.model.StatusEntrega
+import com.example.marketplace.model.enums.StatusEntrega
 import com.example.marketplace.model.Usuario
 import com.example.marketplace.model.Venda
 

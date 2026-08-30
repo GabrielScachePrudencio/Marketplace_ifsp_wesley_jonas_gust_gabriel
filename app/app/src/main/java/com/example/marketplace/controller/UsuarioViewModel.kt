@@ -49,7 +49,7 @@ class UsuarioViewModelFactory(
 ) : ViewModelProvider.Factory {
     override fun <T : ViewModel> create(modelClass: Class<T>): T {
         val db = AppDatabase.getDatabase(context)
-        val repository = UsuarioRepository(db.usuarioDao())
+        val repository = UsuarioRepository(db.usuarioDao(),db.pendenteSycronizacaoDao())
         @Suppress("UNCHECKED_CAST")
         return UsuarioViewModel(repository) as T
     }

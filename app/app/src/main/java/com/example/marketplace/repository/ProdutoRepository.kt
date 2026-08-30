@@ -1,26 +1,28 @@
 package com.example.marketplace.data.repository
 
-import androidx.room.Entity
-import androidx.room.PrimaryKey
 import com.example.marketplace.data.dao.PendenteSycronizacaoDao
 import com.example.marketplace.data.dao.ProdutoDao
 import com.example.marketplace.data.local.FirestoreDateConverter
 import com.example.marketplace.domain.ProdutoRegras
 import com.example.marketplace.model.PendenteSycronizacao
 import com.example.marketplace.model.Produto
+import com.example.marketplace.model.enums.OperacaoPendente
 import com.example.marketplace.model.enums.TipoPendenteSyncronizacao
 import com.example.marketplace.service.FirebaseService
 import com.google.firebase.firestore.DocumentSnapshot
+import com.google.gson.Gson
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.tasks.await
 import kotlinx.coroutines.withTimeoutOrNull
 import java.time.LocalDateTime
 
-class ProdutoRepository(private val produtoDao: ProdutoDao, private val pendenteSycronizacaoDao: PendenteSycronizacaoDao) {
+class ProdutoRepository(
+    private val produtoDao: ProdutoDao,
+    private val pendenteSycronizacaoDao: PendenteSycronizacaoDao
+) {
 
     private val colecao = FirebaseService.firestore.collection("produtos")
-
-    private val podeSalvarParaTestar: Boolean = false
+    private val gson = Gson()
 
     suspend fun criarProduto(
         vendedorId: String,
@@ -47,21 +49,19 @@ class ProdutoRepository(private val produtoDao: ProdutoDao, private val pendente
 
         val sucesso = salvarNoFirestore(produto)
 
+        produtoDao.insert(produto)
 
-        if(sucesso == false){
-            val pendente: PendenteSycronizacao = PendenteSycronizacao(como gerar esse id?, TipoPendenteSyncronizacao.PRODUTOS, )
-            produtoDao.insert(produto)
-            pendenteSycronizacaoDao.inserir()
+        if (!sucesso) {
+            pendenteSycronizacaoDao.inserir(
+                PendenteSycronizacao(
+                    id = produto.id,
+                    tipo = TipoPendenteSyncronizacao.PRODUTOS,
+                    operacao = OperacaoPendente.CREATE,
+                    payloadJson = gson.toJson(produto)
+                )
+            )
         }
-//        @Entity(tableName = "pendente_sycronizacao")
-//        data class PendenteSycronizacao(
-//            @PrimaryKey val id: String,
-//            val tipo: String,
-//            val operacao: String,
-//            val payloadJson: String,
-//            val criadoEm: LocalDateTime = LocalDateTime.now()
-//
-//        )
+
         return produto
     }
 
@@ -69,26 +69,74 @@ class ProdutoRepository(private val produtoDao: ProdutoDao, private val pendente
         ProdutoRegras.validar(produto.titulo, produto.descricao, produto.categoria, produto.preco, produto.quantidade, produto.vendedorId)
 
         val sucesso = salvarNoFirestore(produto)
+
         produtoDao.update(produto)
 
-        // TODO: se sucesso == false, marcar/gravar como pendente de sincronização
+        if (!sucesso) {
+            pendenteSycronizacaoDao.inserir(
+                PendenteSycronizacao(
+                    id = produto.id,
+                    tipo = TipoPendenteSyncronizacao.PRODUTOS,
+                    operacao = OperacaoPendente.UPDATE,
+                    payloadJson = gson.toJson(produto)
+                )
+            )
+        }
     }
 
     suspend fun excluirProduto(produto: Produto) {
-        colecao.document(produto.id).delete().await()
+        val sucesso = withTimeoutOrNull(5000) {
+            try {
+                colecao.document(produto.id).delete().await()
+                true
+            } catch (e: Exception) {
+                false
+            }
+        } ?: false
+
         produtoDao.deletar(produto)
+
+        if (!sucesso) {
+            pendenteSycronizacaoDao.inserir(
+                PendenteSycronizacao(
+                    id = produto.id,
+                    tipo = TipoPendenteSyncronizacao.PRODUTOS,
+                    operacao = OperacaoPendente.DELETE,
+                    payloadJson = gson.toJson(produto)
+                )
+            )
+        }
     }
 
+    /** Busca local primeiro (Room); só cai pro Firestore se não achar, e trata offline */
     suspend fun buscarProdutoPorId(id: String): Produto? {
         produtoDao.buscarPorId(id)?.let { return it }
 
-        val doc = colecao.document(id).get().await()
-        if (!doc.exists()) return null
-        return produtoDeDocumento(doc)
+        return try {
+            val doc = colecao.document(id).get().await()
+            if (!doc.exists()) return null
+
+            val produto = produtoDeDocumento(doc)
+            produtoDao.insert(produto)
+            produto
+        } catch (e: Exception) {
+            // offline e sem cache local: não tem como recuperar esse produto agora
+            null
+        }
     }
 
+    /** Lista local (Room) — vitrine offline-first */
     fun buscarProdutos(): Flow<List<Produto>> = produtoDao.listarTodos()
 
+    /** Sincroniza Firestore -> Room (chamar ao entrar na tela / puxar pra atualizar) */
+    suspend fun sincronizarProdutos() {
+        val snapshot = colecao.get().await()
+        for (doc in snapshot.documents) {
+            if (doc.exists()) {
+                produtoDao.insert(produtoDeDocumento(doc))
+            }
+        }
+    }
 
     private suspend fun salvarNoFirestore(produto: Produto): Boolean {
         val dados = mapOf(
@@ -101,8 +149,6 @@ class ProdutoRepository(private val produtoDao: ProdutoDao, private val pendente
             "imagens" to produto.imagens,
             "dataCriacao" to FirestoreDateConverter.paraMillis(produto.dataCriacao)
         )
-
-        if(!podeSalvarParaTestar) return false
 
         return withTimeoutOrNull(5000) {
             try {

@@ -13,7 +13,7 @@ interface PendenteSycronizacaoDao{
     suspend fun inserir(pendente: PendenteSycronizacao)
 
     @Query("SELECT * FROM pendente_sycronizacao ORDER BY criadoEm ASC")
-    suspend fun listarPendete(): List<PendenteSycronizacao>
+    suspend fun listarPendetes(): List<PendenteSycronizacao>
 
     @Query("DELETE FROM pendente_sycronizacao WHERE id = :id")
     suspend fun remover(id: String)
