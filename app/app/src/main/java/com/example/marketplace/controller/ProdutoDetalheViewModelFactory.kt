@@ -12,9 +12,11 @@ import com.example.marketplace.data.repository.VendaRepository
 class ProdutoDetalheViewModelFactory(private val context: Context) : ViewModelProvider.Factory {
     override fun <T : ViewModel> create(modelClass: Class<T>): T {
         val db = AppDatabase.getDatabase(context)
-        val produtoRepository = ProdutoRepository(db.produtoDao())
-        val vendaRepository = VendaRepository(db.vendaDao(), produtoRepository)
-        val avaliacaoRepository = AvaliacaoProdutoRepository(db.avaliacaoProdutoDao())
+        val produtoRepository = ProdutoRepository(db.produtoDao(), db.pendenteSycronizacaoDao())
+        val vendaRepository = VendaRepository(db.vendaDao(),
+            db.pendenteSycronizacaoDao(), produtoRepository)
+        val avaliacaoRepository = AvaliacaoProdutoRepository(db.avaliacaoProdutoDao(),
+            db.pendenteSycronizacaoDao())
 
         @Suppress("UNCHECKED_CAST")
         return ProdutoDetalheViewModel(produtoRepository, vendaRepository, avaliacaoRepository) as T

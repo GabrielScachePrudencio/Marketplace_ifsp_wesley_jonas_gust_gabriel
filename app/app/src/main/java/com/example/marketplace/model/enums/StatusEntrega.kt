@@ -1,4 +1,4 @@
-package com.example.marketplace.model
+package com.example.marketplace.model.enums
 
 enum class StatusEntrega(val descricao: String) {
     PENDENTE("Pendente"),

@@ -1,18 +1,32 @@
 package com.example.marketplace.data.repository
 
+import com.example.marketplace.data.dao.PendenteSycronizacaoDao
 import com.example.marketplace.data.dao.ProdutoDao
 import com.example.marketplace.data.local.FirestoreDateConverter
 import com.example.marketplace.domain.ProdutoRegras
+import com.example.marketplace.model.PendenteSycronizacao
 import com.example.marketplace.model.Produto
+import com.example.marketplace.model.enums.OperacaoPendente
+import com.example.marketplace.model.enums.TipoPendenteSyncronizacao
 import com.example.marketplace.service.FirebaseService
 import com.google.firebase.firestore.DocumentSnapshot
+import com.google.gson.Gson
+import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.tasks.await
+import kotlinx.coroutines.withTimeoutOrNull
 import java.time.LocalDateTime
 
-class ProdutoRepository(private val produtoDao: ProdutoDao) {
+class ProdutoRepository(
+    private val produtoDao: ProdutoDao,
+    private val pendenteSycronizacaoDao: PendenteSycronizacaoDao
+) {
 
     private val colecao = FirebaseService.firestore.collection("produtos")
+    private val gson = Gson()
+
+    // ===== ESCRITA — sem mudanças, continua igual (já está funcionando) =====
 
     suspend fun criarProduto(
         vendedorId: String,
@@ -37,8 +51,19 @@ class ProdutoRepository(private val produtoDao: ProdutoDao) {
             dataCriacao = LocalDateTime.now()
         )
 
-        salvarNoFirestore(produto)
+        val sucesso = salvarNoFirestore(produto)
         produtoDao.insert(produto)
+
+        if (!sucesso) {
+            pendenteSycronizacaoDao.inserir(
+                PendenteSycronizacao(
+                    id = produto.id,
+                    tipo = TipoPendenteSyncronizacao.PRODUTOS,
+                    operacao = OperacaoPendente.CREATE,
+                    payloadJson = gson.toJson(produto)
+                )
+            )
+        }
 
         return produto
     }
@@ -46,26 +71,75 @@ class ProdutoRepository(private val produtoDao: ProdutoDao) {
     suspend fun atualizarProduto(produto: Produto) {
         ProdutoRegras.validar(produto.titulo, produto.descricao, produto.categoria, produto.preco, produto.quantidade, produto.vendedorId)
 
-        salvarNoFirestore(produto)
+        val sucesso = salvarNoFirestore(produto)
         produtoDao.update(produto)
+
+        if (!sucesso) {
+            pendenteSycronizacaoDao.inserir(
+                PendenteSycronizacao(
+                    id = produto.id,
+                    tipo = TipoPendenteSyncronizacao.PRODUTOS,
+                    operacao = OperacaoPendente.UPDATE,
+                    payloadJson = gson.toJson(produto)
+                )
+            )
+        }
     }
 
     suspend fun excluirProduto(produto: Produto) {
-        colecao.document(produto.id).delete().await()
+        val sucesso = withTimeoutOrNull(5000) {
+            try {
+                colecao.document(produto.id).delete().await()
+                true
+            } catch (e: Exception) {
+                false
+            }
+        } ?: false
+
         produtoDao.deletar(produto)
+
+        if (!sucesso) {
+            pendenteSycronizacaoDao.inserir(
+                PendenteSycronizacao(
+                    id = produto.id,
+                    tipo = TipoPendenteSyncronizacao.PRODUTOS,
+                    operacao = OperacaoPendente.DELETE,
+                    payloadJson = gson.toJson(produto)
+                )
+            )
+        }
     }
 
+    // ===== LEITURA — agora sempre tenta Firebase primeiro =====
+
+    /** Busca por id: Firestore primeiro; só cai pro Room se estiver offline/der erro */
     suspend fun buscarProdutoPorId(id: String): Produto? {
-        produtoDao.buscarPorId(id)?.let { return it }
-
-        val doc = colecao.document(id).get().await()
-        if (!doc.exists()) return null
-        return produtoDeDocumento(doc)
+        return try {
+            val doc = colecao.document(id).get().await()
+            if (!doc.exists()) return null
+            val produto = produtoDeDocumento(doc)
+            produtoDao.insert(produto) // atualiza cache local
+            produto
+        } catch (e: Exception) {
+            // offline: usa o que tiver salvo localmente como último recurso
+            produtoDao.buscarPorId(id)
+        }
     }
 
-    fun buscarProdutos(): Flow<List<Produto>> = produtoDao.listarTodos()
+    /** Lista em tempo real DIRETO do Firestore — não depende do Room pra exibir */
+    fun buscarProdutos(): Flow<List<Produto>> = callbackFlow {
+        val listener = colecao.addSnapshotListener { snapshot, erro ->
+            if (erro != null) {
+                // Firestore indisponível: não fecha o flow, só ignora esse evento
+                return@addSnapshotListener
+            }
+            val produtos = snapshot?.documents?.map { produtoDeDocumento(it) } ?: emptyList()
+            trySend(produtos)
+        }
+        awaitClose { listener.remove() }
+    }
 
-    private suspend fun salvarNoFirestore(produto: Produto) {
+    private suspend fun salvarNoFirestore(produto: Produto): Boolean {
         val dados = mapOf(
             "vendedorId" to produto.vendedorId,
             "titulo" to produto.titulo,
@@ -76,7 +150,15 @@ class ProdutoRepository(private val produtoDao: ProdutoDao) {
             "imagens" to produto.imagens,
             "dataCriacao" to FirestoreDateConverter.paraMillis(produto.dataCriacao)
         )
-        colecao.document(produto.id).set(dados).await()
+
+        return withTimeoutOrNull(5000) {
+            try {
+                colecao.document(produto.id).set(dados).await()
+                true
+            } catch (e: Exception) {
+                false
+            }
+        } ?: false
     }
 
     private fun produtoDeDocumento(doc: DocumentSnapshot): Produto {

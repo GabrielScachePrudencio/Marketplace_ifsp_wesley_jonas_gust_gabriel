@@ -10,7 +10,8 @@ import com.example.marketplace.data.repository.UsuarioRepository
 class CadastroViewModelFactory(private val context: Context) : ViewModelProvider.Factory {
     override fun <T : ViewModel> create(modelClass: Class<T>): T {
         val db = AppDatabase.getDatabase(context)
-        val repository = UsuarioRepository(db.usuarioDao())
+        val repository = UsuarioRepository(db.usuarioDao(),
+            db.pendenteSycronizacaoDao())
 
         @Suppress("UNCHECKED_CAST")
         return CadastroViewModel(repository) as T

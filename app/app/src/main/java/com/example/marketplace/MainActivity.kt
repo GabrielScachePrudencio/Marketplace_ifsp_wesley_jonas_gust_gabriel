@@ -192,7 +192,7 @@ class MainActivity : ComponentActivity() {
                             ) {
 
                                 veiculoViewModel
-                                    .sincronizarECarregarVeiculos(
+                                    .carregarVeiculosDoMotorista(
                                         usuario.uid
                                     )
                             }
@@ -251,7 +251,7 @@ class MainActivity : ComponentActivity() {
 
                                             // Atualiza os veículos
                                             veiculoViewModel
-                                                .sincronizarECarregarVeiculos(
+                                                .carregarVeiculosDoMotorista(
                                                     usuario.uid
                                                 )
 

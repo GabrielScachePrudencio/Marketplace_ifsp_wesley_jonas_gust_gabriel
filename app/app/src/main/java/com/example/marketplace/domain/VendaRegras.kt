@@ -1,7 +1,7 @@
 package com.example.marketplace.domain
 
 import com.example.marketplace.model.Produto
-import com.example.marketplace.model.StatusEntrega
+import com.example.marketplace.model.enums.StatusEntrega
 
 object VendaRegras {
     val STATUS_INICIAL = StatusEntrega.PENDENTE.name

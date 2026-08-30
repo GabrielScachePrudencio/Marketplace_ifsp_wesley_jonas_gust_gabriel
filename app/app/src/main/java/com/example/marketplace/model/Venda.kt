@@ -2,6 +2,7 @@ package com.example.marketplace.model
 
 import androidx.room.Entity
 import androidx.room.PrimaryKey
+import com.example.marketplace.model.enums.StatusEntrega
 import java.time.LocalDateTime
 
 @Entity(tableName = "vendas")

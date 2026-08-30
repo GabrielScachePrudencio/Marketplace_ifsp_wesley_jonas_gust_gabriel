@@ -1,7 +1,6 @@
 package com.example.marketplace.domain
 
-import com.example.marketplace.model.Produto
-import com.example.marketplace.model.StatusEntrega
+import com.example.marketplace.model.enums.StatusEntrega
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertThrows
 import org.junit.Test

@@ -15,7 +15,7 @@ import com.example.marketplace.controller.UsuarioViewModel
 import com.example.marketplace.controller.UsuarioViewModelFactory
 import com.example.marketplace.controller.VendaListViewModel
 import com.example.marketplace.controller.VendaListViewModelFactory
-import com.example.marketplace.model.StatusEntrega
+import com.example.marketplace.model.enums.StatusEntrega
 import com.example.marketplace.model.Usuario
 import com.example.marketplace.model.Veiculo
 import com.example.marketplace.model.Venda
