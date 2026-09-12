@@ -6,6 +6,7 @@ import androidx.room.Delete
 import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
+import androidx.room.Update
 import com.example.marketplace.model.Usuario
 import kotlinx.coroutines.flow.Flow
 
@@ -13,6 +14,9 @@ import kotlinx.coroutines.flow.Flow
 interface UsuarioDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insert(usuario: Usuario)
+
+    @Update
+    suspend fun update(usuario: Usuario)
 
     @Query("SELECT * FROM usuarios WHERE uid = :uid")
     suspend fun buscarPorId(uid: String): Usuario?

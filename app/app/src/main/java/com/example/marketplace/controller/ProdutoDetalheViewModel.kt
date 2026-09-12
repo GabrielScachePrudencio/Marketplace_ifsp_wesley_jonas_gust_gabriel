@@ -61,7 +61,7 @@ class ProdutoDetalheViewModel(
         }
     }
 
-    fun comprar(compradorId: String, quantidade: Int) {
+    fun comprar(compradorId: String, quantidade: Int, compradorNome: String = "") {
         val produtoAtual = _produto.value ?: return
         viewModelScope.launch {
             _compraUiState.value = CompraUiState.Loading
@@ -71,7 +71,9 @@ class ProdutoDetalheViewModel(
                     vendedorId = produtoAtual.vendedorId,
                     motoristaId = "",
                     produtoId = produtoAtual.id,
-                    quantidade = quantidade
+                    quantidade = quantidade,
+                    compradorNome = compradorNome,
+                    produtoTitulo = produtoAtual.titulo
                 )
                 _produto.value = produtoRepository.buscarProdutoPorId(produtoAtual.id)
                 _compraUiState.value = CompraUiState.Sucesso

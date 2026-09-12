@@ -9,10 +9,12 @@ import java.time.LocalDateTime
 data class Venda(
     @PrimaryKey val id: String = "",
     val compradorId: String = "",
+    val compradorNome: String = "",
     val vendedorId: String = "",
     val motoristaId: String = "",
     val veiculoId: String? = null,
     val produtoId: String = "",
+    val produtoTitulo: String = "",
     val quantidade: Int = 0,
     val valorUnitario: Double = 0.0,
     val valorTotal: Double = 0.0,

@@ -8,6 +8,7 @@ import com.example.marketplace.model.Usuario
 import com.example.marketplace.model.enums.OperacaoPendente
 import com.example.marketplace.model.enums.TipoPendenteSyncronizacao
 import com.example.marketplace.service.FirebaseService
+import com.google.firebase.firestore.FieldValue
 import com.google.gson.Gson
 import kotlinx.coroutines.tasks.await
 import kotlinx.coroutines.withTimeoutOrNull
@@ -140,7 +141,8 @@ class UsuarioRepository(
         return usuario
     }
 
-    private suspend fun buscarUsuarioPorUid(uid: String): Usuario {
+    @Suppress("UNCHECKED_CAST")
+    suspend fun buscarUsuarioPorUid(uid: String): Usuario {
         Log.d("MP_DEBUG", "Buscando documento em usuarios/$uid")
 
         val doc = colecao.document(uid).get().await()
@@ -151,6 +153,9 @@ class UsuarioRepository(
         if (!doc.exists()) throw Exception("Perfil de usuário não encontrado no Firestore")
 
         val dataCriacaoMillis = doc.getLong("dataCriacao")
+        val negociantesList = (doc.get("negociantesIds") as? List<*>)?.mapNotNull { it as? String }
+            ?: listOfNotNull(doc.getString("negocianteId"))
+
         return Usuario(
             uid = uid,
             nome = doc.getString("nome") ?: "",
@@ -166,7 +171,20 @@ class UsuarioRepository(
             estado = doc.getString("estado") ?: "",
             cep = doc.getString("cep") ?: "",
             negocianteId = doc.getString("negocianteId"),
+            negociantesIds = negociantesList
         )
+    }
+
+    suspend fun buscarUsuario(uid: String): Usuario? {
+        val local = usuarioDao.buscarPorId(uid)
+        if (local != null) return local
+        return try {
+            val remoto = buscarUsuarioPorUid(uid)
+            usuarioDao.insert(remoto)
+            remoto
+        } catch (e: Exception) {
+            null
+        }
     }
 
     suspend fun listarNegociantes(): List<Usuario> {
@@ -188,17 +206,28 @@ class UsuarioRepository(
     suspend fun vincularNegociante(motoristaUid: String, negocianteId: String) {
         val sucesso = withTimeoutOrNull(5000) {
             try {
-                colecao.document(motoristaUid).update("negocianteId", negocianteId).await()
+                colecao.document(motoristaUid).update(
+                    "negociantesIds", FieldValue.arrayUnion(negocianteId),
+                    "negocianteId", negocianteId
+                ).await()
                 true
             } catch (e: Exception) {
                 false
             }
         } ?: false
 
-        usuarioDao.vincularNegociante(motoristaUid, negocianteId)
+        val usuarioLocal = usuarioDao.buscarPorId(motoristaUid)
+        if (usuarioLocal != null) {
+            val novaLista = (usuarioLocal.todosNegociantesIds() + negocianteId).distinct()
+            val usuarioAtualizado = usuarioLocal.copy(
+                negociantesIds = novaLista,
+                negocianteId = novaLista.firstOrNull()
+            )
+            usuarioDao.insert(usuarioAtualizado)
+        }
 
         if (!sucesso) {
-            val payload = mapOf("motoristaUid" to motoristaUid, "negocianteId" to negocianteId)
+            val payload = mapOf("motoristaUid" to motoristaUid, "negocianteId" to negocianteId, "acao" to "vincular")
             pendenteSycronizacaoDao.inserir(
                 PendenteSycronizacao(
                     id = motoristaUid,
@@ -210,20 +239,30 @@ class UsuarioRepository(
         }
     }
 
-    suspend fun desvincularNegociante(motoristaUid: String) {
+    suspend fun desvincularNegociante(motoristaUid: String, negocianteId: String) {
         val sucesso = withTimeoutOrNull(5000) {
             try {
-                colecao.document(motoristaUid).update("negocianteId", null).await()
+                colecao.document(motoristaUid).update(
+                    "negociantesIds", FieldValue.arrayRemove(negocianteId)
+                ).await()
                 true
             } catch (e: Exception) {
                 false
             }
         } ?: false
 
-        usuarioDao.desvincularNegociante(motoristaUid)
+        val usuarioLocal = usuarioDao.buscarPorId(motoristaUid)
+        if (usuarioLocal != null) {
+            val novaLista = usuarioLocal.todosNegociantesIds().filter { it != negocianteId }
+            val usuarioAtualizado = usuarioLocal.copy(
+                negociantesIds = novaLista,
+                negocianteId = novaLista.firstOrNull()
+            )
+            usuarioDao.insert(usuarioAtualizado)
+        }
 
         if (!sucesso) {
-            val payload = mapOf("motoristaUid" to motoristaUid, "negocianteId" to null)
+            val payload = mapOf("motoristaUid" to motoristaUid, "negocianteId" to negocianteId, "acao" to "desvincular")
             pendenteSycronizacaoDao.inserir(
                 PendenteSycronizacao(
                     id = motoristaUid,
@@ -252,6 +291,7 @@ class UsuarioRepository(
             "estado" to usuario.estado,
             "cep" to usuario.cep,
             "negocianteId" to usuario.negocianteId,
+            "negociantesIds" to usuario.todosNegociantesIds(),
             "dataCriacao" to usuario.dataCriacao.toEpochSecond(ZoneOffset.UTC) * 1000
         )
 

@@ -17,5 +17,15 @@ data class Usuario(
     val estado: String = "",
     val cep: String = "",
     val negocianteId: String? = null,
+    val negociantesIds: List<String> = emptyList(),
     val dataCriacao: LocalDateTime = LocalDateTime.now()
-)
+) {
+    fun todosNegociantesIds(): List<String> {
+        val lista = ArrayList<String>()
+        lista.addAll(negociantesIds)
+        if (!negocianteId.isNullOrBlank() && !lista.contains(negocianteId)) {
+            lista.add(negocianteId)
+        }
+        return lista
+    }
+}

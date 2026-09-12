@@ -105,7 +105,7 @@ fun ProdutoDetalheScreen(
                             Spacer(Modifier.height(8.dp))
                         }
                         Button(
-                            onClick = { viewModel.comprar(usuario.uid, quantidadeCompra.toIntOrNull() ?: 0) },
+                            onClick = { viewModel.comprar(usuario.uid, quantidadeCompra.toIntOrNull() ?: 0, usuario.nome) },
                             enabled = compraUiState !is CompraUiState.Loading,
                             modifier = Modifier.fillMaxWidth()
                         ) {

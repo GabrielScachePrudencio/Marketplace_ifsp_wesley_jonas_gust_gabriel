@@ -11,6 +11,7 @@ import com.example.marketplace.model.Venda
 import com.example.marketplace.model.enums.OperacaoPendente
 import com.example.marketplace.model.enums.TipoPendenteSyncronizacao
 import com.example.marketplace.service.FirebaseService
+import com.google.firebase.firestore.FieldValue
 import com.google.gson.Gson
 import kotlinx.coroutines.tasks.await
 import kotlinx.coroutines.withTimeoutOrNull
@@ -101,17 +102,33 @@ class SyncManager(
                             "estado" to usuario.estado,
                             "cep" to usuario.cep,
                             "negocianteId" to usuario.negocianteId,
+                            "negociantesIds" to usuario.todosNegociantesIds(),
                             "dataCriacao" to FirestoreDateConverter.paraMillis(usuario.dataCriacao)
                         )
                         colecao.document(item.id).set(dados).await()
                     }
                     OperacaoPendente.UPDATE -> {
-                        // caso específico: vincularNegociante/desvincularNegociante salvam {motoristaUid, negocianteId}
                         @Suppress("UNCHECKED_CAST")
                         val payload = gson.fromJson(item.payloadJson, Map::class.java) as Map<String, Any?>
                         val motoristaUid = payload["motoristaUid"] as? String ?: item.id
                         val negocianteId = payload["negocianteId"] as? String
-                        colecao.document(motoristaUid).update("negocianteId", negocianteId).await()
+                        val acao = payload["acao"] as? String
+
+                        if (negocianteId != null) {
+                            if (acao == "desvincular") {
+                                colecao.document(motoristaUid).update(
+                                    "negociantesIds", FieldValue.arrayRemove(negocianteId)
+                                ).await()
+                            } else {
+                                colecao.document(motoristaUid).update(
+                                    "negociantesIds", FieldValue.arrayUnion(negocianteId),
+                                    "negocianteId", negocianteId
+                                ).await()
+                            }
+                        } else {
+                            val negocianteIdLegado = payload["negocianteId"] as? String
+                            colecao.document(motoristaUid).update("negocianteId", negocianteIdLegado).await()
+                        }
                     }
                     OperacaoPendente.DELETE -> {
                         colecao.document(item.id).delete().await()
@@ -163,10 +180,12 @@ class SyncManager(
                         val venda = gson.fromJson(item.payloadJson, Venda::class.java)
                         val dados = mapOf(
                             "compradorId" to venda.compradorId,
+                            "compradorNome" to venda.compradorNome,
                             "vendedorId" to venda.vendedorId,
                             "motoristaId" to venda.motoristaId,
                             "veiculoId" to venda.veiculoId,
                             "produtoId" to venda.produtoId,
+                            "produtoTitulo" to venda.produtoTitulo,
                             "quantidade" to venda.quantidade,
                             "valorUnitario" to venda.valorUnitario,
                             "valorTotal" to venda.valorTotal,

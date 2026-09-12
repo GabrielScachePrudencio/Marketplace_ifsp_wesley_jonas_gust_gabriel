@@ -32,7 +32,9 @@ class VendaRepository(
         vendedorId: String,
         motoristaId: String,
         produtoId: String,
-        quantidade: Int
+        quantidade: Int,
+        compradorNome: String = "",
+        produtoTitulo: String = ""
     ): Venda {
         val produto = produtoRepository.buscarProdutoPorId(produtoId)
             ?: throw Exception("Produto não encontrado")
@@ -41,13 +43,17 @@ class VendaRepository(
 
         val valorUnitario = produto.preco
         val valorTotal = VendaRegras.calcularValorTotal(valorUnitario, quantidade)
+        val titulo = if (produtoTitulo.isNotBlank()) produtoTitulo else produto.titulo
 
         val venda = Venda(
             id = colecao.document().id,
             compradorId = compradorId,
+            compradorNome = compradorNome,
             vendedorId = vendedorId,
             motoristaId = motoristaId,
+            veiculoId = null,
             produtoId = produtoId,
+            produtoTitulo = titulo,
             quantidade = quantidade,
             valorUnitario = valorUnitario,
             valorTotal = valorTotal,
@@ -138,10 +144,12 @@ class VendaRepository(
     private suspend fun salvarNoFirestore(venda: Venda): Boolean {
         val dados = mapOf(
             "compradorId" to venda.compradorId,
+            "compradorNome" to venda.compradorNome,
             "vendedorId" to venda.vendedorId,
             "motoristaId" to venda.motoristaId,
             "veiculoId" to venda.veiculoId,
             "produtoId" to venda.produtoId,
+            "produtoTitulo" to venda.produtoTitulo,
             "quantidade" to venda.quantidade,
             "valorUnitario" to venda.valorUnitario,
             "valorTotal" to venda.valorTotal,
@@ -164,10 +172,12 @@ class VendaRepository(
         return Venda(
             id = doc.id,
             compradorId = doc.getString("compradorId") ?: "",
+            compradorNome = doc.getString("compradorNome") ?: "",
             vendedorId = doc.getString("vendedorId") ?: "",
             motoristaId = doc.getString("motoristaId") ?: "",
             veiculoId = doc.getString("veiculoId"),
             produtoId = doc.getString("produtoId") ?: "",
+            produtoTitulo = doc.getString("produtoTitulo") ?: "",
             quantidade = (doc.getLong("quantidade") ?: 0L).toInt(),
             valorUnitario = doc.getDouble("valorUnitario") ?: 0.0,
             valorTotal = doc.getDouble("valorTotal") ?: 0.0,

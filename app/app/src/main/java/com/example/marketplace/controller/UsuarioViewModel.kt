@@ -45,16 +45,28 @@ class UsuarioViewModel(
 
     fun desvincularNegociante(
         motoristaUid: String,
+        negocianteId: String,
         onSucesso: () -> Unit
     ) {
         viewModelScope.launch {
             _vinculando.value = true
             try {
-                repository.desvincularNegociante(motoristaUid)
+                repository.desvincularNegociante(motoristaUid, negocianteId)
                 onSucesso()
             } finally {
                 _vinculando.value = false
             }
+        }
+    }
+
+    suspend fun buscarUsuarioPorId(uid: String): Usuario? {
+        return repository.buscarUsuario(uid)
+    }
+
+    fun carregarUsuario(uid: String, onResultado: (Usuario?) -> Unit) {
+        viewModelScope.launch {
+            val user = repository.buscarUsuario(uid)
+            onResultado(user)
         }
     }
 }
