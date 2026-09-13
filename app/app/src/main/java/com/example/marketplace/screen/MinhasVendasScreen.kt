@@ -3,7 +3,9 @@ package com.example.marketplace.screen
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -13,11 +15,14 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.example.marketplace.controller.UsuarioViewModel
+import com.example.marketplace.controller.UsuarioViewModelFactory
 import com.example.marketplace.controller.VendaListViewModel
 import com.example.marketplace.controller.VendaListViewModelFactory
 import com.example.marketplace.model.enums.StatusEntrega
 import com.example.marketplace.model.Usuario
 import com.example.marketplace.model.Venda
+import java.time.format.DateTimeFormatter
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -29,6 +34,9 @@ fun MinhasVendasScreen(
     val viewModel: VendaListViewModel = viewModel(
         factory = VendaListViewModelFactory(context)
     )
+    val usuarioViewModel: UsuarioViewModel = viewModel(
+        factory = UsuarioViewModelFactory(context)
+    )
 
     val ehComprador = usuario.perfil == "comprador"
     val tituloTela = if (ehComprador) "Minhas Compras" else "Minhas Vendas"
@@ -38,6 +46,28 @@ fun MinhasVendasScreen(
         vendas.filter { it.compradorId == usuario.uid }
     } else {
         vendas.filter { it.vendedorId == usuario.uid }
+    }
+    var vendaSelecionada by remember { mutableStateOf<Venda?>(null) }
+    var usuariosRelacionados by remember { mutableStateOf<Map<String, Usuario>>(emptyMap()) }
+
+    LaunchedEffect(listaExibicao, ehComprador) {
+        val ids = listaExibicao.flatMap { venda ->
+            if (ehComprador) {
+                listOf(venda.vendedorId)
+            } else {
+                listOf(venda.compradorId, venda.motoristaId)
+            }
+        }.filter { it.isNotBlank() }.distinct()
+
+        ids.forEach { uid ->
+            if (!usuariosRelacionados.containsKey(uid)) {
+                usuarioViewModel.carregarUsuario(uid) { usuarioRelacionado ->
+                    if (usuarioRelacionado != null) {
+                        usuariosRelacionados = usuariosRelacionados + (uid to usuarioRelacionado)
+                    }
+                }
+            }
+        }
     }
 
     Scaffold(
@@ -67,6 +97,7 @@ fun MinhasVendasScreen(
                     VendaCard(
                         venda = venda,
                         usuario = usuario,
+                        onVerDetalhes = { vendaSelecionada = venda },
                         onAtualizarStatus = { novoStatus ->
                             viewModel.avancarStatus(
                                 vendaId = venda.id,
@@ -78,6 +109,17 @@ fun MinhasVendasScreen(
                 }
             }
         }
+    }
+
+    vendaSelecionada?.let { venda ->
+        DetalhesMinhaVendaDialog(
+            venda = venda,
+            ehComprador = ehComprador,
+            vendedor = usuariosRelacionados[venda.vendedorId],
+            comprador = usuariosRelacionados[venda.compradorId],
+            motorista = usuariosRelacionados[venda.motoristaId],
+            onDismiss = { vendaSelecionada = null }
+        )
     }
 }
 
@@ -110,6 +152,7 @@ fun StatusEntregaBadge(status: StatusEntrega) {
 private fun VendaCard(
     venda: Venda,
     usuario: Usuario,
+    onVerDetalhes: () -> Unit,
     onAtualizarStatus: (String) -> Unit
 ) {
     val ehVendedor = venda.vendedorId == usuario.uid
@@ -138,6 +181,14 @@ private fun VendaCard(
                 style = MaterialTheme.typography.bodyLarge,
                 fontWeight = FontWeight.Bold
             )
+
+            Spacer(Modifier.height(10.dp))
+            OutlinedButton(
+                onClick = onVerDetalhes,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text("Ver mais informações")
+            }
 
             // Mensagem explicativa do status para o comprador
             if (usuario.perfil == "comprador") {
@@ -205,4 +256,72 @@ private fun VendaCard(
             }
         }
     }
+}
+
+@Composable
+private fun DetalhesMinhaVendaDialog(
+    venda: Venda,
+    ehComprador: Boolean,
+    vendedor: Usuario?,
+    comprador: Usuario?,
+    motorista: Usuario?,
+    onDismiss: () -> Unit
+) {
+    val tituloProduto = venda.produtoTitulo.ifBlank { "Produto #${venda.produtoId.take(6)}" }
+    val dataFormatada = try {
+        venda.dataCriacao.format(DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm"))
+    } catch (_: Exception) {
+        ""
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Column {
+                Text("Detalhes do pedido #${venda.id.take(8)}")
+                StatusEntregaBadge(status = venda.statusEntrega)
+            }
+        },
+        text = {
+            Column(
+                modifier = Modifier.verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Text("Produto: $tituloProduto", fontWeight = FontWeight.SemiBold)
+                Text("Quantidade: ${venda.quantidade}")
+                if (venda.valorUnitario > 0.0) {
+                    Text("Valor unitário: R$ %.2f".format(venda.valorUnitario))
+                }
+                Text("Valor total: R$ %.2f".format(venda.valorTotal), fontWeight = FontWeight.Bold)
+                if (dataFormatada.isNotBlank()) {
+                    Text("Data da compra: $dataFormatada", style = MaterialTheme.typography.bodySmall)
+                }
+
+                HorizontalDivider()
+                if (ehComprador) {
+                    Text("Onde você comprou", fontWeight = FontWeight.Bold)
+                    Text(vendedor?.nome ?: "Loja não identificada")
+                    vendedor?.let { loja ->
+                        if (loja.rua.isNotBlank()) Text("Endereço: ${loja.rua}, Nº ${loja.numero}")
+                        if (loja.cidade.isNotBlank()) Text("${loja.cidade} - ${loja.estado}")
+                        if (loja.email.isNotBlank()) Text("Contato: ${loja.email}")
+                    }
+                } else {
+                    Text("Dados do comprador", fontWeight = FontWeight.Bold)
+                    Text(comprador?.nome ?: venda.compradorNome.ifBlank { "Cliente não identificado" })
+                    comprador?.let { cliente ->
+                        if (cliente.email.isNotBlank()) Text("Email: ${cliente.email}")
+                        if (cliente.rua.isNotBlank()) Text("Entrega: ${cliente.rua}, Nº ${cliente.numero}")
+                        if (cliente.cidade.isNotBlank()) Text("${cliente.cidade} - ${cliente.estado}")
+                    }
+                    if (motorista != null) {
+                        Text("Motorista: ${motorista.nome}")
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            Button(onClick = onDismiss) { Text("Fechar") }
+        }
+    )
 }
