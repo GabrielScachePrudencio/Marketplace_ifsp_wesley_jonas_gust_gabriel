@@ -103,6 +103,7 @@ class SyncManager(
                             "cep" to usuario.cep,
                             "negocianteId" to usuario.negocianteId,
                             "negociantesIds" to usuario.todosNegociantesIds(),
+                            "fotoPerfil" to usuario.fotoPerfil,
                             "dataCriacao" to FirestoreDateConverter.paraMillis(usuario.dataCriacao)
                         )
                         colecao.document(item.id).set(dados).await()
@@ -114,7 +115,10 @@ class SyncManager(
                         val negocianteId = payload["negocianteId"] as? String
                         val acao = payload["acao"] as? String
 
-                        if (negocianteId != null) {
+                        if (acao == "atualizarFoto") {
+                            val fotoPerfil = payload["fotoPerfil"] as? String ?: ""
+                            colecao.document(item.id).update("fotoPerfil", fotoPerfil).await()
+                        } else if (negocianteId != null) {
                             if (acao == "desvincular") {
                                 colecao.document(motoristaUid).update(
                                     "negociantesIds", FieldValue.arrayRemove(negocianteId)

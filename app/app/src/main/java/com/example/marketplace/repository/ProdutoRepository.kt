@@ -35,7 +35,7 @@ class ProdutoRepository(
         categoria: String,
         preco: Double,
         quantidade: Int,
-        imagens: String
+        imagens: List<String> = emptyList()
     ): Produto {
         ProdutoRegras.validar(titulo, descricao, categoria, preco, quantidade, vendedorId)
 
@@ -66,6 +66,19 @@ class ProdutoRepository(
         }
 
         return produto
+    }
+
+    suspend fun criarProduto(
+        vendedorId: String,
+        titulo: String,
+        descricao: String,
+        categoria: String,
+        preco: Double,
+        quantidade: Int,
+        imagens: String
+    ): Produto {
+        val lista = if (imagens.isBlank()) emptyList() else listOf(imagens)
+        return criarProduto(vendedorId, titulo, descricao, categoria, preco, quantidade, lista)
     }
 
     suspend fun atualizarProduto(produto: Produto) {
@@ -162,6 +175,12 @@ class ProdutoRepository(
     }
 
     private fun produtoDeDocumento(doc: DocumentSnapshot): Produto {
+        @Suppress("UNCHECKED_CAST")
+        val imagensList = (doc.get("imagens") as? List<*>)?.mapNotNull { it as? String }
+            ?: doc.getString("imagens")?.let { str ->
+                if (str.isNotBlank()) listOf(str) else emptyList()
+            } ?: emptyList()
+
         return Produto(
             id = doc.id,
             vendedorId = doc.getString("vendedorId") ?: "",
@@ -170,7 +189,7 @@ class ProdutoRepository(
             categoria = doc.getString("categoria") ?: "",
             preco = doc.getDouble("preco") ?: 0.0,
             quantidade = (doc.getLong("quantidade") ?: 0L).toInt(),
-            imagens = doc.getString("imagens") ?: "",
+            imagens = imagensList,
             dataCriacao = FirestoreDateConverter.deMillis(doc.getLong("dataCriacao"))
         )
     }

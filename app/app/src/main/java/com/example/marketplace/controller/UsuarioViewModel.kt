@@ -69,6 +69,13 @@ class UsuarioViewModel(
             onResultado(user)
         }
     }
+
+    fun atualizarFotoPerfil(uid: String, novaFotoBase64: String, onResultado: (Boolean) -> Unit = {}) {
+        viewModelScope.launch {
+            val ok = repository.atualizarFotoPerfil(uid, novaFotoBase64)
+            onResultado(ok)
+        }
+    }
 }
 
 class UsuarioViewModelFactory(

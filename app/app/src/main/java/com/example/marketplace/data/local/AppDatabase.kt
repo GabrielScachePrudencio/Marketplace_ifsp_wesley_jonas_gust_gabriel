@@ -27,7 +27,7 @@ import com.example.marketplace.model.Venda
         Venda::class,
         PendenteSycronizacao::class
     ],
-    version = 4,
+    version = 5,
     exportSchema = false
 )
 @TypeConverters(Converters::class)

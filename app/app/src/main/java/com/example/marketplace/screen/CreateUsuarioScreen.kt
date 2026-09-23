@@ -1,8 +1,15 @@
 package com.example.marketplace.screen
 
+import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -14,6 +21,8 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.marketplace.controller.CadastroUiState
 import com.example.marketplace.controller.CadastroViewModel
 import com.example.marketplace.controller.CadastroViewModelFactory
+import com.example.marketplace.util.AvatarUsuario
+import com.example.marketplace.util.ImageUtils
 
 private val PERFIS = listOf("comprador", "motorista", "negociador")
 
@@ -41,6 +50,18 @@ fun CreateUsuarioScreen(
     var cidade by remember { mutableStateOf("") }
     var estado by remember { mutableStateOf("") }
     var cep by remember { mutableStateOf("") }
+    var fotoPerfilBase64 by remember { mutableStateOf("") }
+
+    val photoPickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.PickVisualMedia()
+    ) { uri: Uri? ->
+        if (uri != null) {
+            val base64 = ImageUtils.uriParaBase64(context, uri, maxDimensao = 300, qualidade = 70)
+            if (base64 != null) {
+                fotoPerfilBase64 = base64
+            }
+        }
+    }
 
     LaunchedEffect(uiState) {
         if (uiState is CadastroUiState.Sucesso) {
@@ -63,6 +84,41 @@ fun CreateUsuarioScreen(
         ) {
 
             Text("Dados pessoais", style = MaterialTheme.typography.titleMedium)
+
+            Box(
+                modifier = Modifier.fillMaxWidth(),
+                contentAlignment = Alignment.Center
+            ) {
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    modifier = Modifier.clickable {
+                        photoPickerLauncher.launch(
+                            PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                        )
+                    }
+                ) {
+                    AvatarUsuario(
+                        fotoBase64 = fotoPerfilBase64.ifEmpty { null },
+                        nome = nome,
+                        modifier = Modifier.size(96.dp)
+                    )
+                    Spacer(Modifier.height(6.dp))
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            imageVector = Icons.Default.CameraAlt,
+                            contentDescription = "Selecionar foto",
+                            modifier = Modifier.size(16.dp),
+                            tint = MaterialTheme.colorScheme.primary
+                        )
+                        Spacer(Modifier.width(4.dp))
+                        Text(
+                            text = if (fotoPerfilBase64.isBlank()) "Adicionar foto" else "Alterar foto",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                    }
+                }
+            }
 
             OutlinedTextField(
                 value = nome,
@@ -179,7 +235,8 @@ fun CreateUsuarioScreen(
                         numero = numero,
                         cidade = cidade,
                         estado = estado,
-                        cep = cep
+                        cep = cep,
+                        fotoPerfil = fotoPerfilBase64
                     )
                 },
                 enabled = uiState !is CadastroUiState.Loading,

@@ -18,6 +18,7 @@ data class Usuario(
     val cep: String = "",
     val negocianteId: String? = null,
     val negociantesIds: List<String> = emptyList(),
+    val fotoPerfil: String = "",
     val dataCriacao: LocalDateTime = LocalDateTime.now()
 ) {
     fun todosNegociantesIds(): List<String> {

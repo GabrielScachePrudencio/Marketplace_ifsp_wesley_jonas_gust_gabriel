@@ -1,5 +1,9 @@
 package com.example.marketplace.screen
 
+import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -23,6 +27,8 @@ import com.example.marketplace.controller.VeiculoViewModelFactory
 import com.example.marketplace.controller.VendaListViewModel
 import com.example.marketplace.controller.VendaListViewModelFactory
 import com.example.marketplace.domain.VeiculoRegras
+import com.example.marketplace.util.AvatarUsuario
+import com.example.marketplace.util.ImageUtils
 import com.example.marketplace.model.enums.StatusEntrega
 import com.example.marketplace.model.Usuario
 import com.example.marketplace.model.Veiculo
@@ -55,6 +61,23 @@ fun HomeMotoristaScreen(
     // Conjunto reativo com os IDs de todos os parceiros vinculados (ilimitado)
     var parceirosVinculadosIds by remember(usuario) {
         mutableStateOf(usuario.todosNegociantesIds().toSet())
+    }
+
+    var fotoPerfilAtual by remember(usuario.fotoPerfil) {
+        mutableStateOf(usuario.fotoPerfil)
+    }
+
+    val photoPickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.PickVisualMedia()
+    ) { uri: Uri? ->
+        if (uri != null) {
+            val base64 = ImageUtils.uriParaBase64(context, uri, maxDimensao = 300, qualidade = 70)
+            if (base64 != null) {
+                usuarioViewModel.atualizarFotoPerfil(usuario.uid, base64) {
+                    fotoPerfilAtual = base64
+                }
+            }
+        }
     }
 
     // Estados para controle de modais e ações
@@ -119,7 +142,29 @@ fun HomeMotoristaScreen(
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             item {
-                Text("Olá, ${usuario.nome}!", style = MaterialTheme.typography.headlineSmall)
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    AvatarUsuario(
+                        fotoBase64 = fotoPerfilAtual.ifEmpty { null },
+                        nome = usuario.nome,
+                        modifier = Modifier.size(56.dp),
+                        onClick = {
+                            photoPickerLauncher.launch(
+                                PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                            )
+                        }
+                    )
+                    Column {
+                        Text("Olá, ${usuario.nome}!", style = MaterialTheme.typography.headlineSmall)
+                        Text(
+                            "Toque na foto para alterá-la",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
             }
 
             // ------------------------------------------------

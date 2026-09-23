@@ -13,7 +13,7 @@ data class Produto(
     val categoria: String = "",
     val preco: Double = 0.0,
     val quantidade: Int = 0,
-    val imagens: String = "",
+    val imagens: List<String> = emptyList(),
     val dataCriacao: LocalDateTime = LocalDateTime.now()
 
 )

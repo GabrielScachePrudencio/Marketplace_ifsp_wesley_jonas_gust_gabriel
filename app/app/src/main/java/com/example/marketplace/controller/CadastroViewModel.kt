@@ -35,7 +35,8 @@ class CadastroViewModel(
         numero: String,
         cidade: String,
         estado: String,
-        cep: String
+        cep: String,
+        fotoPerfil: String = ""
     ) {
 
         if (
@@ -111,7 +112,8 @@ class CadastroViewModel(
                     numero = numero,
                     cidade = cidade,
                     estado = estado,
-                    cep = cep
+                    cep = cep,
+                    fotoPerfil = fotoPerfil
                 )
 
                 _uiState.value =

@@ -71,7 +71,8 @@ class UsuarioRepository(
         numero: String,
         cidade: String,
         estado: String,
-        cep: String
+        cep: String,
+        fotoPerfil: String = ""
     ): Usuario {
         val result = FirebaseService.auth.createUserWithEmailAndPassword(email, senha).await()
 
@@ -88,6 +89,7 @@ class UsuarioRepository(
             cidade = cidade,
             estado = estado,
             cep = cep,
+            fotoPerfil = fotoPerfil,
             dataCriacao = LocalDateTime.now()
         )
 
@@ -171,7 +173,8 @@ class UsuarioRepository(
             estado = doc.getString("estado") ?: "",
             cep = doc.getString("cep") ?: "",
             negocianteId = doc.getString("negocianteId"),
-            negociantesIds = negociantesList
+            negociantesIds = negociantesList,
+            fotoPerfil = doc.getString("fotoPerfil") ?: ""
         )
     }
 
@@ -198,7 +201,8 @@ class UsuarioRepository(
                     uid = doc.id,
                     nome = doc.getString("nome") ?: "",
                     email = doc.getString("email") ?: "",
-                    perfil = doc.getString("perfil") ?: ""
+                    perfil = doc.getString("perfil") ?: "",
+                    fotoPerfil = doc.getString("fotoPerfil") ?: ""
                 )
             }
     }
@@ -292,6 +296,7 @@ class UsuarioRepository(
             "cep" to usuario.cep,
             "negocianteId" to usuario.negocianteId,
             "negociantesIds" to usuario.todosNegociantesIds(),
+            "fotoPerfil" to usuario.fotoPerfil,
             "dataCriacao" to usuario.dataCriacao.toEpochSecond(ZoneOffset.UTC) * 1000
         )
 
@@ -303,5 +308,36 @@ class UsuarioRepository(
                 false
             }
         } ?: false
+    }
+
+    suspend fun atualizarFotoPerfil(uid: String, novaFotoBase64: String): Boolean {
+        val sucesso = withTimeoutOrNull(5000) {
+            try {
+                colecao.document(uid).update("fotoPerfil", novaFotoBase64).await()
+                true
+            } catch (e: Exception) {
+                false
+            }
+        } ?: false
+
+        val usuarioLocal = usuarioDao.buscarPorId(uid)
+        if (usuarioLocal != null) {
+            val atualizado = usuarioLocal.copy(fotoPerfil = novaFotoBase64)
+            usuarioDao.insert(atualizado)
+        }
+
+        if (!sucesso) {
+            val payload = mapOf("uid" to uid, "fotoPerfil" to novaFotoBase64, "acao" to "atualizarFoto")
+            pendenteSycronizacaoDao.inserir(
+                PendenteSycronizacao(
+                    id = uid,
+                    tipo = TipoPendenteSyncronizacao.USUARIOS,
+                    operacao = OperacaoPendente.UPDATE,
+                    payloadJson = gson.toJson(payload)
+                )
+            )
+        }
+
+        return sucesso
     }
 }
