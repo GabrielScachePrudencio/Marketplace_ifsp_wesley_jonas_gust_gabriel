@@ -5,7 +5,7 @@ import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import com.example.marketplace.data.local.AppDatabase
-import com.example.marketplace.data.repository.UsuarioRepository
+import com.example.marketplace.repository.UsuarioRepository
 
 class CadastroViewModelFactory(private val context: Context) : ViewModelProvider.Factory {
     override fun <T : ViewModel> create(modelClass: Class<T>): T {

@@ -50,6 +50,8 @@ fun CreateUsuarioScreen(
     var cidade by remember { mutableStateOf("") }
     var estado by remember { mutableStateOf("") }
     var cep by remember { mutableStateOf("") }
+    var latitude by remember { mutableStateOf("") }
+    var longitude by remember { mutableStateOf("") }
     var fotoPerfilBase64 by remember { mutableStateOf("") }
 
     val photoPickerLauncher = rememberLauncherForActivityResult(
@@ -213,6 +215,23 @@ fun CreateUsuarioScreen(
                 )
             }
 
+            Text("Coordenadas (opcional - para rastreamento de entregas)", style = MaterialTheme.typography.titleMedium)
+
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedTextField(
+                    value = latitude,
+                    onValueChange = { latitude = it },
+                    label = { Text("Latitude") },
+                    modifier = Modifier.weight(1f)
+                )
+                OutlinedTextField(
+                    value = longitude,
+                    onValueChange = { longitude = it },
+                    label = { Text("Longitude") },
+                    modifier = Modifier.weight(1f)
+                )
+            }
+
             if (uiState is CadastroUiState.Erro) {
                 Text(
                     text = (uiState as CadastroUiState.Erro).mensagem,
@@ -236,6 +255,8 @@ fun CreateUsuarioScreen(
                         cidade = cidade,
                         estado = estado,
                         cep = cep,
+                        latitude = latitude.toDoubleOrNull(),
+                        longitude = longitude.toDoubleOrNull(),
                         fotoPerfil = fotoPerfilBase64
                     )
                 },

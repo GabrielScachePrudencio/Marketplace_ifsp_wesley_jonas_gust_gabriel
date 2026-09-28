@@ -1,19 +1,24 @@
-// controller/LoginViewModelFactory.kt
 package com.example.marketplace.controller
 
 import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import com.example.marketplace.data.local.AppDatabase
-import com.example.marketplace.repository.UsuarioRepository
+import com.example.marketplace.repository.RastreioEntregaRepository
 
-class LoginViewModelFactory(private val context: Context) : ViewModelProvider.Factory {
+class FilaEntregasViewModelFactory(
+    private val context: Context
+) : ViewModelProvider.Factory {
+
     override fun <T : ViewModel> create(modelClass: Class<T>): T {
         val db = AppDatabase.getDatabase(context)
-        val repository = UsuarioRepository(db.usuarioDao(),
-            db.pendenteSycronizacaoDao())
+
+        val repository = RastreioEntregaRepository(
+            db.rastreioEntregaDao(),
+            db.pendenteSycronizacaoDao()
+        )
 
         @Suppress("UNCHECKED_CAST")
-        return LoginViewModel(repository) as T
+        return FilaEntregasViewModel(repository) as T
     }
 }

@@ -1,4 +1,4 @@
-package com.example.marketplace.data.repository
+package com.example.marketplace.repository
 
 import android.util.Log
 import com.example.marketplace.data.dao.PendenteSycronizacaoDao
@@ -72,6 +72,8 @@ class UsuarioRepository(
         cidade: String,
         estado: String,
         cep: String,
+        latitude: Double? = null,
+        longitude: Double? = null,
         fotoPerfil: String = ""
     ): Usuario {
         val result = FirebaseService.auth.createUserWithEmailAndPassword(email, senha).await()
@@ -90,6 +92,8 @@ class UsuarioRepository(
             estado = estado,
             cep = cep,
             fotoPerfil = fotoPerfil,
+            latitude = latitude,
+            longitude = longitude,
             dataCriacao = LocalDateTime.now()
         )
 
@@ -174,7 +178,9 @@ class UsuarioRepository(
             cep = doc.getString("cep") ?: "",
             negocianteId = doc.getString("negocianteId"),
             negociantesIds = negociantesList,
-            fotoPerfil = doc.getString("fotoPerfil") ?: ""
+            fotoPerfil = doc.getString("fotoPerfil") ?: "",
+            latitude = doc.getDouble("latitude"),
+            longitude = doc.getDouble("longitude")
         )
     }
 
@@ -297,6 +303,8 @@ class UsuarioRepository(
             "negocianteId" to usuario.negocianteId,
             "negociantesIds" to usuario.todosNegociantesIds(),
             "fotoPerfil" to usuario.fotoPerfil,
+            "latitude" to usuario.latitude,
+            "longitude" to usuario.longitude,
             "dataCriacao" to usuario.dataCriacao.toEpochSecond(ZoneOffset.UTC) * 1000
         )
 

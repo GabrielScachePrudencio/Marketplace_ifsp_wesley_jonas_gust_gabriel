@@ -2,7 +2,7 @@ package com.example.marketplace.controller
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.example.marketplace.data.repository.ProdutoRepository
+import com.example.marketplace.repository.ProdutoRepository
 import com.example.marketplace.model.Produto
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted

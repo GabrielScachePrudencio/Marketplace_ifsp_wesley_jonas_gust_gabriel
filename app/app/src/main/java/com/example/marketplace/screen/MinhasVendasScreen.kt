@@ -22,16 +22,18 @@ import com.example.marketplace.controller.VendaListViewModelFactory
 import com.example.marketplace.model.enums.StatusEntrega
 import com.example.marketplace.model.Usuario
 import com.example.marketplace.model.Venda
+import kotlinx.coroutines.launch
 import java.time.format.DateTimeFormatter
-
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MinhasVendasScreen(
     usuario: Usuario,
-    onVoltar: () -> Unit
+    onVoltar: () -> Unit,
+    onRastrearEntrega: (String) -> Unit = {}
 ) {
     val context = LocalContext.current
-    val viewModel: VendaListViewModel = viewModel(
+    val escopo = rememberCoroutineScope()
+        val viewModel: VendaListViewModel = viewModel(
         factory = VendaListViewModelFactory(context)
     )
     val usuarioViewModel: UsuarioViewModel = viewModel(
@@ -48,6 +50,10 @@ fun MinhasVendasScreen(
         vendas.filter { it.vendedorId == usuario.uid }
     }
     var vendaSelecionada by remember { mutableStateOf<Venda?>(null) }
+
+    // NOVO: estado do diálogo de escolha de ponto de origem
+    var vendaParaMarcarPronta by remember { mutableStateOf<Venda?>(null) }
+
     var usuariosRelacionados by remember { mutableStateOf<Map<String, Usuario>>(emptyMap()) }
 
     LaunchedEffect(listaExibicao, ehComprador) {
@@ -98,12 +104,17 @@ fun MinhasVendasScreen(
                         venda = venda,
                         usuario = usuario,
                         onVerDetalhes = { vendaSelecionada = venda },
+                        onRastrearEntrega = onRastrearEntrega, // CORRIGIDO: agora repassa o callback
                         onAtualizarStatus = { novoStatus ->
                             viewModel.avancarStatus(
                                 vendaId = venda.id,
                                 novoStatus = novoStatus,
                                 perfil = usuario.perfil
                             )
+                        },
+                        onMarcarProntoParaEntrega = {
+                            // NOVO: abre o diálogo em vez de mudar o status direto
+                            vendaParaMarcarPronta = venda
                         }
                     )
                 }
@@ -121,6 +132,37 @@ fun MinhasVendasScreen(
             onDismiss = { vendaSelecionada = null }
         )
     }
+
+    // NOVO: diálogo de escolha do ponto de origem
+    vendaParaMarcarPronta?.let { venda ->
+        val comprador = usuariosRelacionados[venda.compradorId]
+
+        EscolherPontoOrigemDialog(
+            negocianteId = usuario.uid,
+            venda = venda,
+            onConfirmar = { ponto ->
+                vendaParaMarcarPronta = null
+                escopo.launch {
+                    val coordenadas = com.example.marketplace.service.GeocodingService.buscarCoordenadas(
+                        rua = comprador?.rua ?: "",
+                        numero = comprador?.numero ?: "",
+                        cidade = comprador?.cidade ?: "",
+                        estado = comprador?.estado ?: "",
+                        cep = comprador?.cep ?: ""
+                    )
+
+                    viewModel.marcarProntoParaEntrega(
+                        venda = venda,
+                        pontoOrigemId = ponto.id,
+                        enderecoDestinoTexto = comprador?.let { "${it.rua}, ${it.numero} - ${it.cidade}/${it.estado}" } ?: "",
+                        destinoLat = coordenadas?.latitude ?: 0.0,
+                        destinoLng = coordenadas?.longitude ?: 0.0
+                    )
+                }
+            },
+            onDismiss = { vendaParaMarcarPronta = null }
+        )
+    }
 }
 
 @Composable
@@ -128,6 +170,7 @@ fun StatusEntregaBadge(status: StatusEntrega) {
     val (bgColor, textColor, desc) = when (status) {
         StatusEntrega.PENDENTE -> Triple(Color(0xFFFFF3CD), Color(0xFF856404), "Pendente")
         StatusEntrega.PRONTO_PARA_ENTREGA -> Triple(Color(0xFFCCE5FF), Color(0xFF004085), "Pronto para entrega")
+        StatusEntrega.SAIU_PARA_ENTREGA -> Triple(Color(0xFFFFE8D6), Color(0xFFD9534F), "Saiu para entrega")
         StatusEntrega.A_CAMINHO -> Triple(Color(0xFFFFE8D6), Color(0xFFD9534F), "A caminho")
         StatusEntrega.ENTREGUE -> Triple(Color(0xFFD4EDDA), Color(0xFF155724), "Entregue")
         StatusEntrega.CANCELADA -> Triple(Color(0xFFF8D7DA), Color(0xFF721C24), "Cancelada")
@@ -147,13 +190,14 @@ fun StatusEntregaBadge(status: StatusEntrega) {
         )
     }
 }
-
 @Composable
 private fun VendaCard(
     venda: Venda,
     usuario: Usuario,
     onVerDetalhes: () -> Unit,
-    onAtualizarStatus: (String) -> Unit
+    onAtualizarStatus: (String) -> Unit,
+    onRastrearEntrega: (String) -> Unit,
+    onMarcarProntoParaEntrega: () -> Unit
 ) {
     val ehVendedor = venda.vendedorId == usuario.uid
     val status = venda.statusEntrega
@@ -190,12 +234,28 @@ private fun VendaCard(
                 Text("Ver mais informações")
             }
 
+            if (usuario.perfil == "comprador" && (
+                        status == StatusEntrega.PRONTO_PARA_ENTREGA ||
+                                status == StatusEntrega.SAIU_PARA_ENTREGA ||
+                                status == StatusEntrega.A_CAMINHO
+                        )
+            ) {
+                Spacer(Modifier.height(8.dp))
+                Button(
+                    onClick = { onRastrearEntrega(venda.id) },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("Rastrear Entrega")
+                }
+            }
+
             // Mensagem explicativa do status para o comprador
             if (usuario.perfil == "comprador") {
                 Spacer(Modifier.height(8.dp))
                 val mensagemStatus = when (status) {
                     StatusEntrega.PENDENTE -> "Aguardando o vendedor preparar seu pedido."
-                    StatusEntrega.PRONTO_PARA_ENTREGA -> "Pedido pronto! Aguardando coleta pelo motorista."
+                    StatusEntrega.PRONTO_PARA_ENTREGA -> "Pedido pronto! Toque em 'Rastrear Entrega' para ver o ponto de coleta no mapa."
+                    StatusEntrega.SAIU_PARA_ENTREGA -> "O motorista saiu para entrega. Acompanhe no mapa!"
                     StatusEntrega.A_CAMINHO -> "Seu pedido está a caminho com o motorista!"
                     StatusEntrega.ENTREGUE -> "Pedido entregue. Aproveite sua compra!"
                     StatusEntrega.CANCELADA -> "Este pedido foi cancelado."
@@ -213,7 +273,7 @@ private fun VendaCard(
                 when (status) {
                     StatusEntrega.PENDENTE -> {
                         Button(
-                            onClick = { onAtualizarStatus(StatusEntrega.PRONTO_PARA_ENTREGA.name) },
+                            onClick = onMarcarProntoParaEntrega,
                             modifier = Modifier.fillMaxWidth()
                         ) {
                             Text("Marcar como Pronto para Entrega")
@@ -236,6 +296,13 @@ private fun VendaCard(
                                 Text("Voltar para Pendente")
                             }
                         }
+                    }
+                    StatusEntrega.SAIU_PARA_ENTREGA -> {
+                        Text(
+                            "Motorista saiu para entrega",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.secondary
+                        )
                     }
                     StatusEntrega.A_CAMINHO -> {
                         Text(

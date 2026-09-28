@@ -1,4 +1,4 @@
-package com.example.marketplace.data.repository
+package com.example.marketplace.repository
 
 import com.example.marketplace.data.dao.PendenteSycronizacaoDao
 import com.example.marketplace.data.dao.VendaDao
@@ -21,7 +21,8 @@ import java.time.LocalDateTime
 class VendaRepository(
     private val vendaDao: VendaDao,
     private val pendenteSycronizacaoDao: PendenteSycronizacaoDao,
-    private val produtoRepository: ProdutoRepository
+    private val produtoRepository: ProdutoRepository,
+    private val rastreioEntregaRepository: RastreioEntregaRepository
 ) {
 
     private val colecao = FirebaseService.firestore.collection("vendas")
@@ -87,7 +88,11 @@ class VendaRepository(
         novoStatus: String,
         perfil: String? = null,
         motoristaId: String? = null,
-        veiculoId: String? = null
+        veiculoId: String? = null,
+        pontoOrigemId: String? = null,
+        enderecoDestino: String? = null,
+        destinoLat: Double? = null,
+        destinoLng: Double? = null
     ): Venda {
         val venda = buscarVendaPorId(id) ?: throw Exception("Venda não encontrada")
         VendaRegras.validarTransicao(venda.status, novoStatus, perfil, veiculoId)
@@ -113,6 +118,18 @@ class VendaRepository(
                     operacao = OperacaoPendente.UPDATE,
                     payloadJson = gson.toJson(atualizada)
                 )
+            )
+        }
+
+        // Se mudou para PRONTO_PARA_ENTREGA e foi informado ponto de origem, cria rastreio
+        if (novoStatus == "PRONTO_PARA_ENTREGA" && !pontoOrigemId.isNullOrBlank()
+            && !enderecoDestino.isNullOrBlank() && destinoLat != null && destinoLng != null) {
+            rastreioEntregaRepository.criarRastreio(
+                vendaId = id,
+                pontoOrigemId = pontoOrigemId,
+                enderecoDestinoTexto = enderecoDestino,
+                destinoLat = destinoLat,
+                destinoLng = destinoLng
             )
         }
 

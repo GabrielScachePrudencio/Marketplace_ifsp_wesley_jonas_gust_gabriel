@@ -2,9 +2,9 @@ package com.example.marketplace.controller
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.example.marketplace.data.repository.AvaliacaoProdutoRepository
-import com.example.marketplace.data.repository.ProdutoRepository
-import com.example.marketplace.data.repository.VendaRepository
+import com.example.marketplace.repository.AvaliacaoProdutoRepository
+import com.example.marketplace.repository.ProdutoRepository
+import com.example.marketplace.repository.VendaRepository
 import com.example.marketplace.model.AvaliacaoProduto
 import com.example.marketplace.model.Produto
 import kotlinx.coroutines.ExperimentalCoroutinesApi

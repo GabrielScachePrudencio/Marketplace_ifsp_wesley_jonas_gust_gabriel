@@ -2,7 +2,7 @@ package com.example.marketplace.controller
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.example.marketplace.data.repository.UsuarioRepository
+import com.example.marketplace.repository.UsuarioRepository
 import com.example.marketplace.model.Usuario
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -36,6 +36,8 @@ class CadastroViewModel(
         cidade: String,
         estado: String,
         cep: String,
+        latitude: Double? = null,
+        longitude: Double? = null,
         fotoPerfil: String = ""
     ) {
 
@@ -113,6 +115,8 @@ class CadastroViewModel(
                     cidade = cidade,
                     estado = estado,
                     cep = cep,
+                    latitude = latitude,
+                    longitude = longitude,
                     fotoPerfil = fotoPerfil
                 )
 

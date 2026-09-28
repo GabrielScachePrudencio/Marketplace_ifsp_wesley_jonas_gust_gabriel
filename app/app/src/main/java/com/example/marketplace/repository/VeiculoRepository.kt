@@ -1,4 +1,4 @@
-package com.example.marketplace.data.repository
+package com.example.marketplace.repository
 
 import com.example.marketplace.data.dao.PendenteSycronizacaoDao
 import com.example.marketplace.data.dao.VeiculoDao

@@ -1,13 +1,16 @@
 package com.example.marketplace.screen
 
 import androidx.compose.runtime.*
+import com.example.marketplace.model.PontoReferencia
 import com.example.marketplace.model.Usuario
 
 private enum class TelaNegociador {
     PRODUTOS,
     CRIAR_PRODUTO,
     DETALHE_PRODUTO,
-    MINHAS_VENDAS
+    MINHAS_VENDAS,
+    PONTOS_REFERENCIA,
+    CRIAR_EDITAR_PONTO
 }
 
 @Composable
@@ -17,6 +20,7 @@ fun HomeNegociadorScreen(
 ) {
     var telaAtual by remember { mutableStateOf(TelaNegociador.PRODUTOS) }
     var produtoSelecionadoId by remember { mutableStateOf<String?>(null) }
+    var pontoSelecionado by remember { mutableStateOf<PontoReferencia?>(null) }
 
     when (telaAtual) {
 
@@ -33,6 +37,9 @@ fun HomeNegociadorScreen(
                 onMinhasVendas = {
                     telaAtual = TelaNegociador.MINHAS_VENDAS
                 },
+                onPontosReferencia = {
+                    telaAtual = TelaNegociador.PONTOS_REFERENCIA
+                },
                 onLogout = onLogout
             )
         }
@@ -45,6 +52,36 @@ fun HomeNegociadorScreen(
                 },
                 onVoltar = {
                     telaAtual = TelaNegociador.PRODUTOS
+                }
+            )
+        }
+
+        TelaNegociador.PONTOS_REFERENCIA -> {
+            PontosReferenciaScreen(
+                usuario = usuario,
+                onVoltar = {
+                    telaAtual = TelaNegociador.PRODUTOS
+                },
+                onCriarPonto = {
+                    pontoSelecionado = null
+                    telaAtual = TelaNegociador.CRIAR_EDITAR_PONTO
+                },
+                onEditarPonto = { ponto ->
+                    pontoSelecionado = ponto
+                    telaAtual = TelaNegociador.CRIAR_EDITAR_PONTO
+                }
+            )
+        }
+
+        TelaNegociador.CRIAR_EDITAR_PONTO -> {
+            CriarEditarPontoReferenciaScreen(
+                usuario = usuario,
+                pontoExistente = pontoSelecionado,
+                onVoltar = {
+                    telaAtual = TelaNegociador.PONTOS_REFERENCIA
+                },
+                onSucesso = {
+                    telaAtual = TelaNegociador.PONTOS_REFERENCIA
                 }
             )
         }

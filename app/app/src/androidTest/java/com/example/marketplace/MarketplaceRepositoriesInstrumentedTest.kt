@@ -3,10 +3,10 @@ package com.example.marketplace
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.example.marketplace.data.local.AppDatabase
-import com.example.marketplace.data.repository.AvaliacaoProdutoRepository
-import com.example.marketplace.data.repository.ProdutoRepository
-import com.example.marketplace.data.repository.VeiculoRepository
-import com.example.marketplace.data.repository.VendaRepository
+import com.example.marketplace.repository.AvaliacaoProdutoRepository
+import com.example.marketplace.repository.ProdutoRepository
+import com.example.marketplace.repository.VeiculoRepository
+import com.example.marketplace.repository.VendaRepository
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.*
 import org.junit.Test

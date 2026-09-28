@@ -4,7 +4,7 @@ import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import com.example.marketplace.data.local.AppDatabase
-import com.example.marketplace.data.repository.VeiculoRepository
+import com.example.marketplace.repository.VeiculoRepository
 
 class VeiculoViewModelFactory(
     private val context: Context

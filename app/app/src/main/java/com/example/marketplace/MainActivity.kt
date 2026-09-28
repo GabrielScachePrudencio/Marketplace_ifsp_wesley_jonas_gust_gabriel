@@ -25,6 +25,8 @@ import com.example.marketplace.screen.LoginScreen
 import com.example.marketplace.screen.MinhasVendasScreen
 import com.example.marketplace.screen.ProdutoDetalheScreen
 import com.example.marketplace.screen.ProdutoListScreen
+import com.example.marketplace.screen.FilaEntregasMotoristaScreen
+import com.example.marketplace.screen.RastreamentoEntregaScreen
 
 
 // ============================================================
@@ -55,7 +57,8 @@ enum class TelaApp {
 
 enum class TelaMotorista {
     HOME,
-    CADASTRAR_VEICULO
+    CADASTRAR_VEICULO,
+    FILA_ENTREGAS
 }
 
 
@@ -224,6 +227,10 @@ class MainActivity : ComponentActivity() {
                                                     .CADASTRAR_VEICULO
                                         },
 
+                                        onFilaEntregas = {
+                                            telaMotorista = TelaMotorista.FILA_ENTREGAS
+                                        },
+
                                         onLogout = onLogout
                                     )
                                 }
@@ -264,6 +271,19 @@ class MainActivity : ComponentActivity() {
 
                                             telaMotorista =
                                                 TelaMotorista.HOME
+                                        }
+                                    )
+                                }
+
+                                // =====================================
+                                // FILA DE ENTREGAS
+                                // =====================================
+
+                                TelaMotorista.FILA_ENTREGAS -> {
+                                    FilaEntregasMotoristaScreen(
+                                        usuario = usuario,
+                                        onVoltar = {
+                                            telaMotorista = TelaMotorista.HOME
                                         }
                                     )
                                 }

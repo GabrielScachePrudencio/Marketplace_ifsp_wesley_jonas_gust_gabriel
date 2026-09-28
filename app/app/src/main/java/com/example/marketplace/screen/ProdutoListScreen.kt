@@ -28,6 +28,7 @@ fun ProdutoListScreen(
     onProdutoClick: (String) -> Unit,
     onCriarProduto: () -> Unit,
     onMinhasVendas: () -> Unit,
+    onPontosReferencia: () -> Unit = {},
     onLogout: () -> Unit
 ) {
     val context = LocalContext.current
@@ -60,6 +61,9 @@ fun ProdutoListScreen(
                     }
                 },
                 actions = {
+                    if (usuario.perfil == "negociador") {
+                        TextButton(onClick = onPontosReferencia) { Text("Pontos de Referência") }
+                    }
                     TextButton(onClick = onMinhasVendas) { Text(textoMinhasVendas) }
                     TextButton(onClick = onLogout) { Text("Sair") }
                 }

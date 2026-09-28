@@ -4,7 +4,9 @@ import com.example.marketplace.data.dao.PendenteSycronizacaoDao
 import com.example.marketplace.data.local.FirestoreDateConverter
 import com.example.marketplace.model.AvaliacaoProduto
 import com.example.marketplace.model.PendenteSycronizacao
+import com.example.marketplace.model.PontoReferencia
 import com.example.marketplace.model.Produto
+import com.example.marketplace.model.RastreioEntrega
 import com.example.marketplace.model.Usuario
 import com.example.marketplace.model.Veiculo
 import com.example.marketplace.model.Venda
@@ -50,6 +52,9 @@ class SyncManager(
             TipoPendenteSyncronizacao.VEICULOS -> sincronizarVeiculo(item)
             TipoPendenteSyncronizacao.VENDAS -> sincronizarVenda(item)
             TipoPendenteSyncronizacao.AVALIACAO -> sincronizarAvaliacao(item)
+            TipoPendenteSyncronizacao.PONTOS_REFERENCIA -> sincronizarPontoReferencia(item)
+            TipoPendenteSyncronizacao.RASTREIOS_ENTREGA -> sincronizarRastreioEntrega(item)
+
         }
     }
 
@@ -224,6 +229,75 @@ class SyncManager(
                             "comentario" to avaliacao.comentario,
                             "data" to avaliacao.data,
                             "dataCriacao" to FirestoreDateConverter.paraMillis(avaliacao.dataCriacao)
+                        )
+                        colecao.document(item.id).set(dados).await()
+                    }
+                    OperacaoPendente.DELETE -> {
+                        colecao.document(item.id).delete().await()
+                    }
+                }
+                true
+            } catch (e: Exception) {
+                false
+            }
+        } ?: false
+    }
+
+    private suspend fun sincronizarPontoReferencia(item: PendenteSycronizacao): Boolean {
+        return withTimeoutOrNull(5000) {
+            try {
+                val colecao = firestore.collection("pontos_referencia")
+                when (item.operacao) {
+                    OperacaoPendente.CREATE, OperacaoPendente.UPDATE -> {
+                        val ponto = gson.fromJson(item.payloadJson, PontoReferencia::class.java)
+                        val dados = mapOf(
+                            "negocianteId" to ponto.negocianteId,
+                            "nome" to ponto.nome,
+                            "tipo" to ponto.tipo,
+                            "rua" to ponto.rua,
+                            "numero" to ponto.numero,
+                            "cidade" to ponto.cidade,
+                            "estado" to ponto.estado,
+                            "cep" to ponto.cep,
+                            "latitude" to ponto.latitude,
+                            "longitude" to ponto.longitude,
+                            "principal" to ponto.principal,
+                            "dataCriacao" to FirestoreDateConverter.paraMillis(ponto.dataCriacao)
+                        )
+                        colecao.document(item.id).set(dados).await()
+                    }
+                    OperacaoPendente.DELETE -> {
+                        colecao.document(item.id).delete().await()
+                    }
+                }
+                true
+            } catch (e: Exception) {
+                false
+            }
+        } ?: false
+    }
+
+    private suspend fun sincronizarRastreioEntrega(item: PendenteSycronizacao): Boolean {
+        return withTimeoutOrNull(5000) {
+            try {
+                val colecao = firestore.collection("rastreios_entrega")
+                when (item.operacao) {
+                    OperacaoPendente.CREATE, OperacaoPendente.UPDATE -> {
+                        val rastreio = gson.fromJson(item.payloadJson, RastreioEntrega::class.java)
+                        val dados = mapOf(
+                            "vendaId" to rastreio.vendaId,
+                            "motoristaId" to rastreio.motoristaId,
+                            "pontoOrigemId" to rastreio.pontoOrigemId,
+                            "enderecoDestinoTexto" to rastreio.enderecoDestinoTexto,
+                            "destinoLat" to rastreio.destinoLat,
+                            "destinoLng" to rastreio.destinoLng,
+                            "ultimaLat" to rastreio.ultimaLat,
+                            "ultimaLng" to rastreio.ultimaLng,
+                            "ultimaAtualizacao" to rastreio.ultimaAtualizacao,
+                            "posicaoNaFila" to rastreio.posicaoNaFila,
+                            "iniciadoEm" to rastreio.iniciadoEm,
+                            "finalizadoEm" to rastreio.finalizadoEm,
+                            "dataCriacao" to FirestoreDateConverter.paraMillis(rastreio.dataCriacao)
                         )
                         colecao.document(item.id).set(dados).await()
                     }

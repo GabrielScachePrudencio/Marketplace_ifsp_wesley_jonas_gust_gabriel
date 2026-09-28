@@ -19,6 +19,8 @@ data class Usuario(
     val negocianteId: String? = null,
     val negociantesIds: List<String> = emptyList(),
     val fotoPerfil: String = "",
+    val latitude: Double? = null,
+    val longitude: Double? = null,
     val dataCriacao: LocalDateTime = LocalDateTime.now()
 ) {
     fun todosNegociantesIds(): List<String> {

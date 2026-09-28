@@ -1,5 +1,6 @@
 package com.example.marketplace.screen
 
+import android.content.pm.PackageManager
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
@@ -19,7 +20,10 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.example.marketplace.controller.FilaEntregasViewModel
+import com.example.marketplace.controller.FilaEntregasViewModelFactory
 import com.example.marketplace.controller.UsuarioViewModel
 import com.example.marketplace.controller.UsuarioViewModelFactory
 import com.example.marketplace.controller.VeiculoViewModel
@@ -27,6 +31,7 @@ import com.example.marketplace.controller.VeiculoViewModelFactory
 import com.example.marketplace.controller.VendaListViewModel
 import com.example.marketplace.controller.VendaListViewModelFactory
 import com.example.marketplace.domain.VeiculoRegras
+import com.example.marketplace.model.LocalizacaoMotoristaTracker
 import com.example.marketplace.util.AvatarUsuario
 import com.example.marketplace.util.ImageUtils
 import com.example.marketplace.model.enums.StatusEntrega
@@ -34,6 +39,8 @@ import com.example.marketplace.model.Usuario
 import com.example.marketplace.model.Veiculo
 import com.example.marketplace.model.Venda
 import java.time.format.DateTimeFormatter
+import java.util.jar.Manifest
+
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -41,9 +48,11 @@ fun HomeMotoristaScreen(
     usuario: Usuario,
     veiculos: List<Veiculo>,
     onCadastrarVeiculo: () -> Unit,
+    onFilaEntregas: () -> Unit = {},
     onLogout: () -> Unit
 ) {
     val context = LocalContext.current
+
     val usuarioViewModel: UsuarioViewModel = viewModel(
         factory = UsuarioViewModelFactory(context)
     )
@@ -62,6 +71,7 @@ fun HomeMotoristaScreen(
     var parceirosVinculadosIds by remember(usuario) {
         mutableStateOf(usuario.todosNegociantesIds().toSet())
     }
+    var entregasOcultas by remember { mutableStateOf<Set<String>>(emptySet()) }
 
     var fotoPerfilAtual by remember(usuario.fotoPerfil) {
         mutableStateOf(usuario.fotoPerfil)
@@ -105,6 +115,9 @@ fun HomeMotoristaScreen(
             }
         }
     }
+    val filaViewModel: FilaEntregasViewModel = viewModel(
+        factory = FilaEntregasViewModelFactory(context)
+    )
 
     // Filtra entregas relevantes para o motorista:
     // - Pedidos em PRONTO_PARA_ENTREGA pertencentes a QUALQUER negociante vinculado
@@ -113,17 +126,69 @@ fun HomeMotoristaScreen(
         val status = venda.statusEntrega
         val ehDeParceiro = parceirosVinculadosIds.contains(venda.vendedorId)
         val ehDesteMotorista = venda.motoristaId == usuario.uid
+        val foiOcultada = entregasOcultas.contains(venda.id)
+
+        if (foiOcultada) return@filter false
 
         (ehDeParceiro && status == StatusEntrega.PRONTO_PARA_ENTREGA) ||
-                (ehDesteMotorista && (status == StatusEntrega.A_CAMINHO || status == StatusEntrega.ENTREGUE)) ||
-                (ehDeParceiro && (status == StatusEntrega.A_CAMINHO || status == StatusEntrega.ENTREGUE))
+                (ehDesteMotorista && (status == StatusEntrega.A_CAMINHO || status == StatusEntrega.SAIU_PARA_ENTREGA)) ||
+                (ehDesteMotorista && status == StatusEntrega.ENTREGUE)
+    }
+    // ------------------------------------------------
+    // RASTREAMENTO GPS EM TEMPO REAL (SOMENTE SE HOUVER VENDA ATIVA)
+    // ------------------------------------------------
+    val tracker = remember { LocalizacaoMotoristaTracker(context) }
+
+    var permissaoConcedida by remember {
+        mutableStateOf(
+            ContextCompat.checkSelfPermission(context, android.Manifest.permission.ACCESS_FINE_LOCATION) ==
+                    PackageManager.PERMISSION_GRANTED
+        )
     }
 
+    val permissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) { concedida ->
+        permissaoConcedida = concedida
+    }
+
+    LaunchedEffect(Unit) {
+        if (!permissaoConcedida) {
+            permissionLauncher.launch(android.Manifest.permission.ACCESS_FINE_LOCATION)
+        }
+    }
+
+    // Encontra a venda ativa DESTE motorista (A_CAMINHO ou SAIU_PARA_ENTREGA)
+    val vendaAtiva = entregasMotorista.find {
+        it.motoristaId == usuario.uid &&
+                (it.statusEntrega == StatusEntrega.A_CAMINHO || it.statusEntrega == StatusEntrega.SAIU_PARA_ENTREGA)
+    }
+
+    // Chave reativa: se a venda ativa mudar (iniciar ou finalizar), o efeito dispara
+    LaunchedEffect(vendaAtiva?.id, permissaoConcedida) {
+        if (vendaAtiva != null && permissaoConcedida) {
+            // Só rastreia se tiver venda ativa e permissão
+            tracker.iniciar(vendaAtiva.id)
+        } else {
+            // Se não tiver venda ativa ou permissão, para o rastreamento
+            tracker.pararSeAtivo()
+        }
+    }
+
+    DisposableEffect(Unit) {
+        onDispose { tracker.pararSeAtivo() }
+    }
     Scaffold(
         topBar = {
             TopAppBar(
                 title = { Text("Área do Motorista") },
                 actions = {
+                    TextButton(onClick = onFilaEntregas) { Text("Minha Fila") }
+                    TextButton(onClick = {
+                        filaViewModel.limparFila(usuario.uid)
+                    }) {
+                        Text("Limpar Fila")
+                    }
                     TextButton(onClick = onLogout) { Text("Sair") }
                 }
             )
@@ -651,6 +716,42 @@ private fun MotoristaEntregaCard(
                             modifier = Modifier.fillMaxWidth()
                         ) {
                             Text("Coletar e Iniciar Entrega (A caminho)")
+                        }
+                    }
+                }
+
+                StatusEntrega.SAIU_PARA_ENTREGA -> {
+                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        val veiculoDaEntrega = veiculos.find { it.id == venda.veiculoId }
+                        if (veiculoDaEntrega != null) {
+                            Text(
+                                "Veículo: ${veiculoDaEntrega.modelo} - ${veiculoDaEntrega.placa}",
+                                style = MaterialTheme.typography.bodySmall
+                            )
+                        }
+
+                        Text(
+                            "Saiu para entrega",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+
+                        Button(
+                            onClick = {
+                                onAtualizarStatus(StatusEntrega.ENTREGUE.name, venda.veiculoId)
+                            },
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text("Confirmar Entrega ao Cliente")
+                        }
+
+                        OutlinedButton(
+                            onClick = {
+                                onAtualizarStatus(StatusEntrega.PRONTO_PARA_ENTREGA.name, venda.veiculoId)
+                            },
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text("Cancelar Entrega")
                         }
                     }
                 }
