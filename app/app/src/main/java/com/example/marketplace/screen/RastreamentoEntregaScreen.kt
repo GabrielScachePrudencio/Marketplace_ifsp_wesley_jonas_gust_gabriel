@@ -208,29 +208,6 @@ fun RastreamentoEntregaScreen(
                         }
                     }
 
-                    // Coordenadas resilientes do destino para o mapa (caso rastreio antigo esteja com 0.0)
-                    var latDestinoEfetiva by remember(rastreio?.id) {
-                        mutableStateOf(rastreio?.destinoLat?.takeIf { it != 0.0 })
-                    }
-                    var lngDestinoEfetiva by remember(rastreio?.id) {
-                        mutableStateOf(rastreio?.destinoLng?.takeIf { it != 0.0 })
-                    }
-
-                    LaunchedEffect(rastreio, enderecoDestino) {
-                        if (latDestinoEfetiva == null || lngDestinoEfetiva == null) {
-                            if (usuario.latitude != null && usuario.longitude != null && usuario.latitude != 0.0) {
-                                latDestinoEfetiva = usuario.latitude
-                                lngDestinoEfetiva = usuario.longitude
-                            } else if (enderecoDestino.isNotBlank() && !enderecoDestino.startsWith("Endereço será")) {
-                                val coord = com.example.marketplace.service.GeocodingService.buscarCoordenadasPorTexto(enderecoDestino)
-                                if (coord != null) {
-                                    latDestinoEfetiva = coord.latitude
-                                    lngDestinoEfetiva = coord.longitude
-                                }
-                            }
-                        }
-                    }
-
                     // ================== MAPA DE VERDADE (osmdroid) ==================
                     Card(
                         modifier = Modifier
@@ -251,14 +228,18 @@ fun RastreamentoEntregaScreen(
                                     tipo = TipoMarcador.ORIGEM
                                 )
                             },
-                            destino = if (latDestinoEfetiva != null && lngDestinoEfetiva != null) {
-                                MarcadorMapa(
-                                    latitude = latDestinoEfetiva!!,
-                                    longitude = lngDestinoEfetiva!!,
-                                    titulo = "Destino",
-                                    tipo = TipoMarcador.DESTINO
-                                )
-                            } else null,
+                            destino = rastreio?.let {
+                                val lat = if (it.destinoLat != 0.0) it.destinoLat else (usuario.latitude ?: 0.0)
+                                val lng = if (it.destinoLng != 0.0) it.destinoLng else (usuario.longitude ?: 0.0)
+                                if (lat != 0.0 && lng != 0.0) {
+                                    MarcadorMapa(
+                                        latitude = lat,
+                                        longitude = lng,
+                                        titulo = "Destino",
+                                        tipo = TipoMarcador.DESTINO
+                                    )
+                                } else null
+                            },
                             // Só passa o motorista se o status for A_CAMINHO ou SAIU_PARA_ENTREGA
                             motorista = if (mostrarMotorista) {
                                 localizacaoMotorista?.let {
