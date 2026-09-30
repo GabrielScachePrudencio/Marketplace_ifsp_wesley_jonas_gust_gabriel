@@ -143,18 +143,27 @@ fun MinhasVendasScreen(
             onConfirmar = { ponto ->
                 vendaParaMarcarPronta = null
                 escopo.launch {
-                    val coordenadas = com.example.marketplace.service.GeocodingService.buscarCoordenadas(
-                        rua = comprador?.rua ?: "",
-                        numero = comprador?.numero ?: "",
-                        cidade = comprador?.cidade ?: "",
-                        estado = comprador?.estado ?: "",
-                        cep = comprador?.cep ?: ""
-                    )
+                    val comp = comprador ?: run {
+                        val db = com.example.marketplace.data.local.AppDatabase.getDatabase(context)
+                        db.usuarioDao().buscarPorId(venda.compradorId)
+                    }
+
+                    val coordenadas = if (comp?.latitude != null && comp.longitude != null && comp.latitude != 0.0) {
+                        com.example.marketplace.service.Coordenadas(comp.latitude, comp.longitude)
+                    } else {
+                        com.example.marketplace.service.GeocodingService.buscarCoordenadas(
+                            rua = comp?.rua ?: "",
+                            numero = comp?.numero ?: "",
+                            cidade = comp?.cidade ?: "",
+                            estado = comp?.estado ?: "",
+                            cep = comp?.cep ?: ""
+                        )
+                    }
 
                     viewModel.marcarProntoParaEntrega(
                         venda = venda,
                         pontoOrigemId = ponto.id,
-                        enderecoDestinoTexto = comprador?.let { "${it.rua}, ${it.numero} - ${it.cidade}/${it.estado}" } ?: "",
+                        enderecoDestinoTexto = comp?.let { "${it.rua}, ${it.numero} - ${it.cidade}/${it.estado}" } ?: "",
                         destinoLat = coordenadas?.latitude ?: 0.0,
                         destinoLng = coordenadas?.longitude ?: 0.0
                     )

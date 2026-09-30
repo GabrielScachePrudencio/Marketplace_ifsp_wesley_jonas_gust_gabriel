@@ -194,8 +194,8 @@ fun RastreamentoEntregaScreen(
                                 val enderecoDestino = when {
                                     // 1. Se o rastreio já tem o texto, usa ele
                                     !rastreio?.enderecoDestinoTexto.isNullOrBlank() -> rastreio!!.enderecoDestinoTexto
-                                    // 2. Se não, tenta pegar do cadastro do comprador (você precisa ter o objeto 'comprador' aqui)
-                                    // Como não temos o comprador no ViewModel, vamos mostrar um aviso ou tentar pegar do que temos
+                                    // 2. Se o usuário logado for o comprador, usa o endereço dele
+                                    usuario.rua.isNotBlank() -> "${usuario.rua}, ${usuario.numero} - ${usuario.cidade}/${usuario.estado}"
                                     else -> "Endereço será configurado quando o pedido estiver pronto para entrega."
                                 }
 
@@ -204,6 +204,29 @@ fun RastreamentoEntregaScreen(
                                     style = MaterialTheme.typography.bodyMedium,
                                     fontWeight = FontWeight.Bold
                                 )
+                            }
+                        }
+                    }
+
+                    // Coordenadas resilientes do destino para o mapa (caso rastreio antigo esteja com 0.0)
+                    var latDestinoEfetiva by remember(rastreio?.id) {
+                        mutableStateOf(rastreio?.destinoLat?.takeIf { it != 0.0 })
+                    }
+                    var lngDestinoEfetiva by remember(rastreio?.id) {
+                        mutableStateOf(rastreio?.destinoLng?.takeIf { it != 0.0 })
+                    }
+
+                    LaunchedEffect(rastreio, enderecoDestino) {
+                        if (latDestinoEfetiva == null || lngDestinoEfetiva == null) {
+                            if (usuario.latitude != null && usuario.longitude != null && usuario.latitude != 0.0) {
+                                latDestinoEfetiva = usuario.latitude
+                                lngDestinoEfetiva = usuario.longitude
+                            } else if (enderecoDestino.isNotBlank() && !enderecoDestino.startsWith("Endereço será")) {
+                                val coord = com.example.marketplace.service.GeocodingService.buscarCoordenadasPorTexto(enderecoDestino)
+                                if (coord != null) {
+                                    latDestinoEfetiva = coord.latitude
+                                    lngDestinoEfetiva = coord.longitude
+                                }
                             }
                         }
                     }
@@ -228,14 +251,14 @@ fun RastreamentoEntregaScreen(
                                     tipo = TipoMarcador.ORIGEM
                                 )
                             },
-                            destino = rastreio?.let {
+                            destino = if (latDestinoEfetiva != null && lngDestinoEfetiva != null) {
                                 MarcadorMapa(
-                                    latitude = it.destinoLat,
-                                    longitude = it.destinoLng,
+                                    latitude = latDestinoEfetiva!!,
+                                    longitude = lngDestinoEfetiva!!,
                                     titulo = "Destino",
                                     tipo = TipoMarcador.DESTINO
                                 )
-                            },
+                            } else null,
                             // Só passa o motorista se o status for A_CAMINHO ou SAIU_PARA_ENTREGA
                             motorista = if (mostrarMotorista) {
                                 localizacaoMotorista?.let {
