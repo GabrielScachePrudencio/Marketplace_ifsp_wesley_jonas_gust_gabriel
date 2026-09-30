@@ -19,7 +19,7 @@ data class EnderecoCep(
 object GeocodingService {
 
     // TODO: cole aqui a chave gerada em myprojects.geoapify.com
-    const val API_KEY = "SUA_CHAVE_AQUI"
+    const val API_KEY = "f9e1a3cbf93b427eb77090895f3fd3b3"
 
     private val client = OkHttpClient()
 
@@ -30,8 +30,25 @@ object GeocodingService {
         estado: String,
         cep: String
     ): Coordenadas? {
+        // 1. Tenta endereço completo com número e CEP
         val partes = listOf(rua, numero, cidade, estado, cep, "Brasil").filter { it.isNotBlank() }
-        return buscarCoordenadasPorTexto(partes.joinToString(", "))
+        val resultadoCompleto = buscarCoordenadasPorTexto(partes.joinToString(", "))
+        if (resultadoCompleto != null) return resultadoCompleto
+
+        // 2. Se falhar, tenta sem o número e sem o CEP (caso o número não esteja mapeado na base)
+        if (rua.isNotBlank() && cidade.isNotBlank()) {
+            val partesRuaCidade = listOf(rua, cidade, estado, "Brasil").filter { it.isNotBlank() }
+            val resultadoRua = buscarCoordenadasPorTexto(partesRuaCidade.joinToString(", "))
+            if (resultadoRua != null) return resultadoRua
+        }
+
+        // 3. Fallback: localiza ao menos a cidade
+        if (cidade.isNotBlank()) {
+            val partesCidade = listOf(cidade, estado, "Brasil").filter { it.isNotBlank() }
+            return buscarCoordenadasPorTexto(partesCidade.joinToString(", "))
+        }
+
+        return null
     }
 
     suspend fun buscarCoordenadasPorTexto(texto: String): Coordenadas? = withContext(Dispatchers.IO) {

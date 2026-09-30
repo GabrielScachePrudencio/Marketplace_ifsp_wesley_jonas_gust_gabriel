@@ -146,9 +146,12 @@ fun CriarEditarPontoReferenciaScreen(
                                 if (end.rua.isNotBlank()) rua = end.rua
                                 cidade = end.cidade
                                 estado = end.estado
-                                val coord = GeocodingService.buscarCoordenadasPorTexto(
-                                    listOf(end.rua, end.cidade, end.estado, cep, "Brasil")
-                                        .filter { it.isNotBlank() }.joinToString(", ")
+                                val coord = GeocodingService.buscarCoordenadas(
+                                    rua = end.rua,
+                                    numero = "",
+                                    cidade = end.cidade,
+                                    estado = end.estado,
+                                    cep = cep
                                 )
                                 if (coord != null) {
                                     latitude = coord.latitude
