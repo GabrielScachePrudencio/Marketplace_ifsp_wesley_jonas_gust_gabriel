@@ -33,7 +33,7 @@ import com.example.marketplace.model.Venda
         PontoReferencia::class,
         RastreioEntrega::class
     ],
-    version = 7,
+    version = 8,
     exportSchema = false
 )
 @TypeConverters(Converters::class)

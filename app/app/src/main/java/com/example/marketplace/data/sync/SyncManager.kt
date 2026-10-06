@@ -73,6 +73,7 @@ class SyncManager(
                             "preco" to produto.preco,
                             "quantidade" to produto.quantidade,
                             "imagens" to produto.imagens,
+                            "videoPartes" to produto.videoPartes,
                             "dataCriacao" to FirestoreDateConverter.paraMillis(produto.dataCriacao)
                         )
                         colecao.document(item.id).set(dados).await()

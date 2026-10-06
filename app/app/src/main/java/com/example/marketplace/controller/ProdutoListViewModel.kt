@@ -34,12 +34,13 @@ class ProdutoListViewModel(
         categoria: String,
         preco: Double,
         quantidade: Int,
-        imagens: List<String> = emptyList()
+        imagens: List<String> = emptyList(),
+        video: ByteArray? = null
     ) {
         viewModelScope.launch {
             _criarUiState.value = CriarProdutoUiState.Loading
             try {
-                repository.criarProduto(vendedorId, titulo, descricao, categoria, preco, quantidade, imagens = imagens)
+                repository.criarProduto(vendedorId, titulo, descricao, categoria, preco, quantidade, imagens = imagens, video = video)
                 _criarUiState.value = CriarProdutoUiState.Sucesso
             } catch (e: Exception) {
                 _criarUiState.value = CriarProdutoUiState.Erro(e.message ?: "Erro ao criar produto")

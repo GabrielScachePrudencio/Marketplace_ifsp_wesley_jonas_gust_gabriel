@@ -158,6 +158,29 @@ class VendaRepository(
         awaitClose { listener.remove() }
     }
 
+    /** Pedidos de um comprador para um produto: Firestore primeiro, Room se offline */
+    suspend fun buscarVendasDoCompradorPorProduto(compradorId: String, produtoId: String): List<Venda> {
+        return try {
+            consultaCompradorProduto(compradorId, produtoId).get().await()
+                .documents.map { vendaDeDocumento(it) }
+        } catch (e: Exception) {
+            vendaDao.buscarPorCompradorEProduto(compradorId, produtoId)
+        }
+    }
+
+    /** Mesmo filtro acima, em tempo real (atualiza quando o status do pedido muda) */
+    fun observarVendasDoCompradorPorProduto(compradorId: String, produtoId: String): Flow<List<Venda>> = callbackFlow {
+        val listener = consultaCompradorProduto(compradorId, produtoId).addSnapshotListener { snapshot, erro ->
+            if (erro != null) return@addSnapshotListener
+            trySend(snapshot?.documents?.map { vendaDeDocumento(it) } ?: emptyList())
+        }
+        awaitClose { listener.remove() }
+    }
+
+    private fun consultaCompradorProduto(compradorId: String, produtoId: String) = colecao
+        .whereEqualTo("compradorId", compradorId)
+        .whereEqualTo("produtoId", produtoId)
+
     private suspend fun salvarNoFirestore(venda: Venda): Boolean {
         val dados = mapOf(
             "compradorId" to venda.compradorId,

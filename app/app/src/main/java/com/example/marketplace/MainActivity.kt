@@ -7,7 +7,12 @@ import androidx.activity.compose.setContent
 import androidx.compose.runtime.*
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.tooling.preview.Preview
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
+import androidx.compose.ui.Modifier
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.example.marketplace.ui.theme.MarketPlaceTheme
 
 import com.example.marketplace.controller.LoginUiState
 import com.example.marketplace.controller.LoginViewModel
@@ -69,6 +74,8 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
 
         setContent {
+            MarketPlaceTheme {
+            Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
 
             val context = LocalContext.current
 
@@ -387,6 +394,8 @@ class MainActivity : ComponentActivity() {
                         }
                     }
                 }
+            }
+            }
             }
         }
     }

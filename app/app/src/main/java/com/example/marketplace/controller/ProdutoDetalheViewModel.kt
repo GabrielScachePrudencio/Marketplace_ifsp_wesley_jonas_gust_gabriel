@@ -2,6 +2,7 @@ package com.example.marketplace.controller
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.example.marketplace.domain.AvaliacaoProdutoRegras
 import com.example.marketplace.repository.AvaliacaoProdutoRepository
 import com.example.marketplace.repository.ProdutoRepository
 import com.example.marketplace.repository.VendaRepository
@@ -11,6 +12,8 @@ import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.stateIn
@@ -21,6 +24,13 @@ sealed class CompraUiState {
     object Loading : CompraUiState()
     object Sucesso : CompraUiState()
     data class Erro(val mensagem: String) : CompraUiState()
+}
+
+sealed class VideoUiState {
+    object SemVideo : VideoUiState()
+    object Carregando : VideoUiState()
+    data class Pronto(val bytes: ByteArray) : VideoUiState()
+    object Erro : VideoUiState()
 }
 
 sealed class AvaliacaoUiState {
@@ -41,6 +51,21 @@ class ProdutoDetalheViewModel(
     val produto: StateFlow<Produto?> = _produto
 
     private val _produtoIdAtual = MutableStateFlow<String?>(null)
+    private val _usuarioIdAtual = MutableStateFlow<String?>(null)
+
+    /** true quando o usuário tem algum pedido deste produto entregue ou cancelado */
+    val podeAvaliar: StateFlow<Boolean> = combine(_produtoIdAtual, _usuarioIdAtual) { produtoId, usuarioId ->
+        produtoId to usuarioId
+    }
+        .flatMapLatest { (produtoId, usuarioId) ->
+            if (produtoId == null || usuarioId == null) flowOf(false)
+            else vendaRepository.observarVendasDoCompradorPorProduto(usuarioId, produtoId)
+                .map { AvaliacaoProdutoRegras.podeAvaliar(it) }
+        }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
+
+    private val _videoUiState = MutableStateFlow<VideoUiState>(VideoUiState.SemVideo)
+    val videoUiState: StateFlow<VideoUiState> = _videoUiState
 
     val avaliacoes: StateFlow<List<AvaliacaoProduto>> = _produtoIdAtual
         .flatMapLatest { id ->
@@ -54,10 +79,19 @@ class ProdutoDetalheViewModel(
     private val _avaliacaoUiState = MutableStateFlow<AvaliacaoUiState>(AvaliacaoUiState.Idle)
     val avaliacaoUiState: StateFlow<AvaliacaoUiState> = _avaliacaoUiState
 
-    fun carregarProduto(id: String) {
+    fun carregarProduto(id: String, usuarioId: String? = null) {
         _produtoIdAtual.value = id
+        _usuarioIdAtual.value = usuarioId
         viewModelScope.launch {
-            _produto.value = produtoRepository.buscarProdutoPorId(id)
+            val produto = produtoRepository.buscarProdutoPorId(id)
+            _produto.value = produto
+            if (produto != null && produto.videoPartes > 0) {
+                _videoUiState.value = VideoUiState.Carregando
+                val bytes = produtoRepository.carregarVideo(produto)
+                _videoUiState.value = if (bytes != null) VideoUiState.Pronto(bytes) else VideoUiState.Erro
+            } else {
+                _videoUiState.value = VideoUiState.SemVideo
+            }
         }
     }
 
@@ -88,6 +122,9 @@ class ProdutoDetalheViewModel(
         viewModelScope.launch {
             _avaliacaoUiState.value = AvaliacaoUiState.Loading
             try {
+                AvaliacaoProdutoRegras.validarPedidos(
+                    vendaRepository.buscarVendasDoCompradorPorProduto(usuarioId, produtoAtual.id)
+                )
                 avaliacaoRepository.avaliarProduto(produtoAtual.id, usuarioId, nota, comentario)
                 _avaliacaoUiState.value = AvaliacaoUiState.Sucesso
             } catch (e: Exception) {

@@ -24,6 +24,9 @@ interface VendaDao {
     @Query("SELECT * FROM vendas")
     fun listarTodos(): Flow<List<Venda>>
 
+    @Query("SELECT * FROM vendas WHERE compradorId = :compradorId AND produtoId = :produtoId")
+    suspend fun buscarPorCompradorEProduto(compradorId: String, produtoId: String): List<Venda>
+
     @Delete
     suspend fun deletar(venda: Venda)
 }

@@ -16,6 +16,8 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.tasks.await
 import kotlinx.coroutines.withTimeoutOrNull
+import android.util.Base64
+import java.io.ByteArrayOutputStream
 import java.time.LocalDateTime
 
 class ProdutoRepository(
@@ -24,6 +26,7 @@ class ProdutoRepository(
 ) {
 
     private val colecao = FirebaseService.firestore.collection("produtos")
+    private val colecaoVideos = FirebaseService.firestore.collection("videosProdutos")
     private val gson = Gson()
 
     // ===== ESCRITA — sem mudanças, continua igual (já está funcionando) =====
@@ -35,12 +38,18 @@ class ProdutoRepository(
         categoria: String,
         preco: Double,
         quantidade: Int,
-        imagens: List<String> = emptyList()
+        imagens: List<String> = emptyList(),
+        video: ByteArray? = null
     ): Produto {
         ProdutoRegras.validar(titulo, descricao, categoria, preco, quantidade, vendedorId)
+        if (video != null) ProdutoRegras.validarVideo(video.size)
+
+        val id = colecao.document().id
+        // O vídeo precisa de internet: envia antes de salvar o produto para não deixar referência quebrada
+        val videoPartes = if (video != null) salvarVideo(id, video) else 0
 
         val produto = Produto(
-            id = colecao.document().id,
+            id = id,
             vendedorId = vendedorId,
             titulo = titulo,
             descricao = descricao,
@@ -48,6 +57,7 @@ class ProdutoRepository(
             preco = preco,
             quantidade = quantidade,
             imagens = imagens,
+            videoPartes = videoPartes,
             dataCriacao = LocalDateTime.now()
         )
 
@@ -110,6 +120,7 @@ class ProdutoRepository(
         } ?: false
 
         produtoDao.deletar(produto)
+        if (produto.videoPartes > 0) excluirVideo(produto.id)
 
         if (!sucesso) {
             pendenteSycronizacaoDao.inserir(
@@ -152,6 +163,65 @@ class ProdutoRepository(
         awaitClose { listener.remove() }
     }
 
+    // ===== VÍDEO =====
+    // Firestore limita cada documento a 1 MB, então o vídeo é dividido em partes Base64
+
+    /** Salva o vídeo em partes e retorna quantas partes foram gravadas */
+    private suspend fun salvarVideo(produtoId: String, video: ByteArray): Int {
+        val partes = (video.indices step TAMANHO_PARTE_VIDEO).map { inicio ->
+            video.copyOfRange(inicio, minOf(inicio + TAMANHO_PARTE_VIDEO, video.size))
+        }
+        val enviado = withTimeoutOrNull(120_000) {
+            try {
+                partes.forEachIndexed { indice, parte ->
+                    colecaoVideos.document("${produtoId}_$indice").set(
+                        mapOf(
+                            "produtoId" to produtoId,
+                            "indice" to indice,
+                            "dados" to Base64.encodeToString(parte, Base64.NO_WRAP)
+                        )
+                    ).await()
+                }
+                true
+            } catch (e: Exception) {
+                false
+            }
+        } ?: false
+
+        if (!enviado) throw Exception("Não foi possível enviar o vídeo. Verifique sua conexão e tente novamente.")
+        return partes.size
+    }
+
+    /** Baixa e remonta o vídeo do produto; retorna null se não houver ou se estiver offline */
+    suspend fun carregarVideo(produto: Produto): ByteArray? {
+        if (produto.videoPartes <= 0) return null
+        return withTimeoutOrNull(60_000) {
+            try {
+                val documentos = colecaoVideos.whereEqualTo("produtoId", produto.id).get().await()
+                    .documents.sortedBy { it.getLong("indice") ?: 0L }
+                if (documentos.size != produto.videoPartes) return@withTimeoutOrNull null
+
+                val saida = ByteArrayOutputStream()
+                documentos.forEach { doc ->
+                    saida.write(Base64.decode(doc.getString("dados") ?: "", Base64.NO_WRAP))
+                }
+                saida.toByteArray()
+            } catch (e: Exception) {
+                null
+            }
+        }
+    }
+
+    private suspend fun excluirVideo(produtoId: String) {
+        withTimeoutOrNull(10_000) {
+            try {
+                colecaoVideos.whereEqualTo("produtoId", produtoId).get().await()
+                    .documents.forEach { it.reference.delete().await() }
+            } catch (_: Exception) {
+            }
+        }
+    }
+
     private suspend fun salvarNoFirestore(produto: Produto): Boolean {
         val dados = mapOf(
             "vendedorId" to produto.vendedorId,
@@ -161,6 +231,7 @@ class ProdutoRepository(
             "preco" to produto.preco,
             "quantidade" to produto.quantidade,
             "imagens" to produto.imagens,
+            "videoPartes" to produto.videoPartes,
             "dataCriacao" to FirestoreDateConverter.paraMillis(produto.dataCriacao)
         )
 
@@ -190,7 +261,13 @@ class ProdutoRepository(
             preco = doc.getDouble("preco") ?: 0.0,
             quantidade = (doc.getLong("quantidade") ?: 0L).toInt(),
             imagens = imagensList,
+            videoPartes = (doc.getLong("videoPartes") ?: 0L).toInt(),
             dataCriacao = FirestoreDateConverter.deMillis(doc.getLong("dataCriacao"))
         )
+    }
+
+    companion object {
+        /** 512 KB por parte (~700 KB em Base64), abaixo do limite de 1 MB do Firestore */
+        private const val TAMANHO_PARTE_VIDEO = 512 * 1024
     }
 }

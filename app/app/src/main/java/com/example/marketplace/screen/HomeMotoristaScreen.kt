@@ -14,6 +14,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -33,6 +34,8 @@ import com.example.marketplace.controller.VendaListViewModelFactory
 import com.example.marketplace.domain.VeiculoRegras
 import com.example.marketplace.model.LocalizacaoMotoristaTracker
 import com.example.marketplace.util.AvatarUsuario
+import com.example.marketplace.util.CampoBusca
+import com.example.marketplace.util.correspondeBusca
 import com.example.marketplace.util.ImageUtils
 import com.example.marketplace.model.enums.StatusEntrega
 import com.example.marketplace.model.Usuario
@@ -133,6 +136,21 @@ fun HomeMotoristaScreen(
         (ehDeParceiro && status == StatusEntrega.PRONTO_PARA_ENTREGA) ||
                 (ehDesteMotorista && (status == StatusEntrega.A_CAMINHO || status == StatusEntrega.SAIU_PARA_ENTREGA)) ||
                 (ehDesteMotorista && status == StatusEntrega.ENTREGUE)
+    }
+
+    var buscaEntregas by rememberSaveable { mutableStateOf("") }
+    val entregasFiltradas = entregasMotorista.filter { venda ->
+        val cliente = clientesMap[venda.compradorId]
+        correspondeBusca(
+            buscaEntregas,
+            venda.produtoTitulo,
+            venda.id,
+            venda.compradorNome,
+            cliente?.nome,
+            cliente?.rua,
+            cliente?.cidade,
+            negociantes.find { it.uid == venda.vendedorId }?.nome
+        )
     }
     // ------------------------------------------------
     // RASTREAMENTO GPS EM TEMPO REAL (SOMENTE SE HOUVER VENDA ATIVA)
@@ -481,7 +499,24 @@ fun HomeMotoristaScreen(
                     }
                 }
             } else {
-                items(entregasMotorista, key = { it.id }) { venda ->
+                item {
+                    CampoBusca(
+                        valor = buscaEntregas,
+                        onValorChange = { buscaEntregas = it },
+                        placeholder = "Buscar por produto, cliente ou endereço",
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+                if (entregasFiltradas.isEmpty()) {
+                    item {
+                        Text(
+                            "Nenhuma entrega encontrada para \"$buscaEntregas\".",
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(8.dp)
+                        )
+                    }
+                }
+                items(entregasFiltradas, key = { it.id }) { venda ->
                     val cliente = clientesMap[venda.compradorId]
                     val parceiroVendedor = negociantes.find { it.uid == venda.vendedorId }
 

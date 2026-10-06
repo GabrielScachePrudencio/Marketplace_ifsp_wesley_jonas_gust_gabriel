@@ -14,6 +14,7 @@ data class Produto(
     val preco: Double = 0.0,
     val quantidade: Int = 0,
     val imagens: List<String> = emptyList(),
+    /** Quantidade de partes do vídeo salvas na coleção "videosProdutos" (0 = sem vídeo) */
+    val videoPartes: Int = 0,
     val dataCriacao: LocalDateTime = LocalDateTime.now()
-
 )
