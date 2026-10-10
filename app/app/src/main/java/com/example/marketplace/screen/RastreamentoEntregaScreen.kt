@@ -1,6 +1,8 @@
 package com.example.marketplace.screen
 
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Home
@@ -20,6 +22,9 @@ import com.example.marketplace.controller.RastreamentoEntregaViewModel
 import com.example.marketplace.controller.RastreamentoEntregaViewModelFactory
 import com.example.marketplace.model.Usuario
 import com.example.marketplace.model.enums.StatusEntrega
+import com.example.marketplace.service.PontoRota
+import com.example.marketplace.service.Rota
+import com.example.marketplace.service.RoteamentoService
 import com.example.marketplace.util.MapaRastreamento
 import com.example.marketplace.util.MarcadorMapa
 import com.example.marketplace.util.TipoMarcador
@@ -65,13 +70,14 @@ fun RastreamentoEntregaScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(paddingValues)
+                .verticalScroll(rememberScrollState())
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             when (uiState) {
                 is RastreamentoEntregaUiState.Loading -> {
                     Box(
-                        modifier = Modifier.fillMaxSize(),
+                        modifier = Modifier.fillMaxWidth().padding(32.dp),
                         contentAlignment = Alignment.Center
                     ) {
                         CircularProgressIndicator()
@@ -83,6 +89,43 @@ fun RastreamentoEntregaScreen(
                     val venda = estado.venda
                     val rastreio = estado.rastreio
                     val pontoOrigem = estado.pontoOrigem
+
+                    // O motorista só aparece se o status for A_CAMINHO ou SAIU_PARA_ENTREGA.
+                    val mostrarMotorista = venda.statusEntrega == StatusEntrega.A_CAMINHO ||
+                            venda.statusEntrega == StatusEntrega.SAIU_PARA_ENTREGA
+
+                    val destinoLat = rastreio?.destinoLat?.takeIf { it != 0.0 } ?: usuario.latitude ?: 0.0
+                    val destinoLng = rastreio?.destinoLng?.takeIf { it != 0.0 } ?: usuario.longitude ?: 0.0
+
+                    // ================== ROTA ==================
+                    var rota by remember { mutableStateOf<Rota?>(null) }
+                    var ultimoPontoCalculado by remember { mutableStateOf<PontoRota?>(null) }
+
+                    LaunchedEffect(mostrarMotorista, localizacaoMotorista, pontoOrigem, destinoLat, destinoLng) {
+                        if (destinoLat == 0.0 || destinoLng == 0.0) return@LaunchedEffect
+
+                        // Em rota: motorista -> destino. Antes disso: loja -> destino (prévia).
+                        val partida = if (mostrarMotorista && localizacaoMotorista != null) {
+                            PontoRota(localizacaoMotorista!!.latitude, localizacaoMotorista!!.longitude)
+                        } else pontoOrigem?.let { PontoRota(it.latitude, it.longitude) }
+                            ?: return@LaunchedEffect
+
+                        // Só recalcula se o ponto de partida andou mais de 50 m desde o último cálculo
+                        val anterior = ultimoPontoCalculado
+                        if (anterior != null && rota != null) {
+                            val d = FloatArray(1)
+                            android.location.Location.distanceBetween(
+                                anterior.latitude, anterior.longitude,
+                                partida.latitude, partida.longitude, d
+                            )
+                            if (d[0] < 50f) return@LaunchedEffect
+                        }
+
+                        RoteamentoService.buscarRota(listOf(partida, PontoRota(destinoLat, destinoLng)))?.let {
+                            rota = it
+                            ultimoPontoCalculado = partida
+                        }
+                    }
 
                     // ================== STATUS CARD ==================
                     Card(
@@ -117,7 +160,142 @@ fun RastreamentoEntregaScreen(
                         }
                     }
 
-                    // ================== PONTO DE ORIGEM (AZUL) ==================
+                    // ================== TEMPO ESTIMADO DE CHEGADA ==================
+                    if (mostrarMotorista) {
+                        Card(
+                            modifier = Modifier.fillMaxWidth(),
+                            colors = CardDefaults.cardColors(
+                                containerColor = MaterialTheme.colorScheme.primaryContainer
+                            )
+                        ) {
+                            Column(
+                                modifier = Modifier.fillMaxWidth().padding(16.dp),
+                                horizontalAlignment = Alignment.CenterHorizontally
+                            ) {
+                                val r = rota
+                                if (r != null && localizacaoMotorista != null) {
+                                    val chegada = java.text.SimpleDateFormat("HH:mm", java.util.Locale.getDefault())
+                                        .format(java.util.Date(System.currentTimeMillis() + (r.duracaoSegundos * 1000).toLong()))
+                                    Text(
+                                        "Chega em ~${r.duracaoTexto}",
+                                        style = MaterialTheme.typography.headlineSmall,
+                                        fontWeight = FontWeight.Bold,
+                                        color = MaterialTheme.colorScheme.onPrimaryContainer
+                                    )
+                                    Text(
+                                        "${r.distanciaTexto} de distância • previsão ~$chegada",
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = MaterialTheme.colorScheme.onPrimaryContainer
+                                    )
+                                } else {
+                                    Text(
+                                        "Calculando tempo estimado...",
+                                        style = MaterialTheme.typography.titleMedium,
+                                        color = MaterialTheme.colorScheme.onPrimaryContainer
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    // ================== MAPA (osmdroid) ==================
+                    Card(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(320.dp)
+                    ) {
+                        MapaRastreamento(
+                            origem = pontoOrigem?.let {
+                                MarcadorMapa(
+                                    latitude = it.latitude,
+                                    longitude = it.longitude,
+                                    titulo = it.nome,
+                                    tipo = TipoMarcador.ORIGEM
+                                )
+                            },
+                            destino = if (destinoLat != 0.0 && destinoLng != 0.0) {
+                                MarcadorMapa(
+                                    latitude = destinoLat,
+                                    longitude = destinoLng,
+                                    titulo = "Destino",
+                                    tipo = TipoMarcador.DESTINO
+                                )
+                            } else null,
+                            motorista = if (mostrarMotorista) {
+                                localizacaoMotorista?.let {
+                                    MarcadorMapa(
+                                        latitude = it.latitude,
+                                        longitude = it.longitude,
+                                        titulo = "Motorista",
+                                        tipo = TipoMarcador.MOTORISTA
+                                    )
+                                }
+                            } else null,
+                            rota = rota
+                        )
+                    }
+
+                    // ================== LEGENDA DINÂMICA ==================
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceEvenly,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                imageVector = Icons.Default.Store,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("Origem", style = MaterialTheme.typography.labelSmall)
+                        }
+
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                imageVector = Icons.Default.Home,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.error,
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("Destino", style = MaterialTheme.typography.labelSmall)
+                        }
+
+                        if (mostrarMotorista) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(
+                                    imageVector = Icons.Default.Person,
+                                    contentDescription = null,
+                                    tint = Color.Blue,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text("Motorista", style = MaterialTheme.typography.labelSmall)
+                            }
+                        }
+                    }
+
+                    // Texto de última atualização
+                    if (localizacaoMotorista == null) {
+                        Text(
+                            "Aguardando localização do motorista...",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    } else {
+                        Text(
+                            "Última atualização: ${
+                                java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.getDefault())
+                                    .format(java.util.Date(localizacaoMotorista!!.timestamp))
+                            }",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+
+                    // ================== PONTO DE ORIGEM ==================
                     if (pontoOrigem != null) {
                         Card(
                             modifier = Modifier.fillMaxWidth(),
@@ -129,11 +307,10 @@ fun RastreamentoEntregaScreen(
                                 modifier = Modifier.padding(16.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                // Ícone de Loja para Origem
                                 Icon(
                                     imageVector = Icons.Default.Store,
                                     contentDescription = "Origem",
-                                    tint = MaterialTheme.colorScheme.primary, // Azul/Roxo
+                                    tint = MaterialTheme.colorScheme.primary,
                                     modifier = Modifier.size(36.dp)
                                 )
                                 Spacer(modifier = Modifier.width(16.dp))
@@ -163,7 +340,7 @@ fun RastreamentoEntregaScreen(
                         }
                     }
 
-                    // ================== DESTINO (VERMELHO) ==================
+                    // ================== DESTINO ==================
                     Card(
                         modifier = Modifier.fillMaxWidth(),
                         colors = CardDefaults.cardColors(
@@ -174,11 +351,10 @@ fun RastreamentoEntregaScreen(
                             modifier = Modifier.padding(16.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            // Ícone de Casa para Destino
                             Icon(
                                 imageVector = Icons.Default.Home,
                                 contentDescription = "Destino",
-                                tint = MaterialTheme.colorScheme.error, // Vermelho
+                                tint = MaterialTheme.colorScheme.error,
                                 modifier = Modifier.size(36.dp)
                             )
                             Spacer(modifier = Modifier.width(16.dp))
@@ -190,11 +366,8 @@ fun RastreamentoEntregaScreen(
                                     fontWeight = FontWeight.Bold
                                 )
 
-                                // Lógica para obter o texto do endereço
                                 val enderecoDestino = when {
-                                    // 1. Se o rastreio já tem o texto, usa ele
                                     !rastreio?.enderecoDestinoTexto.isNullOrBlank() -> rastreio!!.enderecoDestinoTexto
-                                    // 2. Se o usuário logado for o comprador, usa o endereço dele
                                     usuario.rua.isNotBlank() -> "${usuario.rua}, ${usuario.numero} - ${usuario.cidade}/${usuario.estado}"
                                     else -> "Endereço será configurado quando o pedido estiver pronto para entrega."
                                 }
@@ -206,122 +379,6 @@ fun RastreamentoEntregaScreen(
                                 )
                             }
                         }
-                    }
-
-                    // ================== MAPA DE VERDADE (osmdroid) ==================
-                    Card(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(320.dp)
-                    ) {
-                        // Lógica: O motorista só aparece se o status for A_CAMINHO ou SAIU_PARA_ENTREGA.
-                        // Se for PRONTO_PARA_ENTREGA, mostramos apenas Origem e Destino.
-                        val mostrarMotorista = venda.statusEntrega == StatusEntrega.A_CAMINHO ||
-                                venda.statusEntrega == StatusEntrega.SAIU_PARA_ENTREGA
-
-                        MapaRastreamento(
-                            origem = pontoOrigem?.let {
-                                MarcadorMapa(
-                                    latitude = it.latitude,
-                                    longitude = it.longitude,
-                                    titulo = it.nome,
-                                    tipo = TipoMarcador.ORIGEM
-                                )
-                            },
-                            destino = rastreio?.let {
-                                val lat = if (it.destinoLat != 0.0) it.destinoLat else (usuario.latitude ?: 0.0)
-                                val lng = if (it.destinoLng != 0.0) it.destinoLng else (usuario.longitude ?: 0.0)
-                                if (lat != 0.0 && lng != 0.0) {
-                                    MarcadorMapa(
-                                        latitude = lat,
-                                        longitude = lng,
-                                        titulo = "Destino",
-                                        tipo = TipoMarcador.DESTINO
-                                    )
-                                } else null
-                            },
-                            // Só passa o motorista se o status for A_CAMINHO ou SAIU_PARA_ENTREGA
-                            motorista = if (mostrarMotorista) {
-                                localizacaoMotorista?.let {
-                                    MarcadorMapa(
-                                        latitude = it.latitude,
-                                        longitude = it.longitude,
-                                        titulo = "Motorista",
-                                        tipo = TipoMarcador.MOTORISTA
-                                    )
-                                }
-                            } else {
-                                null // Não passa motorista se estiver PRONTO_PARA_ENTREGA
-                            }
-                        )
-                    }
-
-                    // ================== LEGENDA DO MAPA ==================
-                    // ================== LEGENDA DINÂMICA ==================
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceEvenly,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        // Legenda Origem (sempre aparece)
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(
-                                imageVector = Icons.Default.Store,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.size(16.dp)
-                            )
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text("Origem", style = MaterialTheme.typography.labelSmall)
-                        }
-
-                        // Legenda Destino (sempre aparece)
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(
-                                imageVector = Icons.Default.Home,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.error,
-                                modifier = Modifier.size(16.dp)
-                            )
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text("Destino", style = MaterialTheme.typography.labelSmall)
-                        }
-
-                        // Legenda Motorista (SÓ aparece se estiver A_CAMINHO ou SAIU_PARA_ENTREGA)
-                        val mostrarMotorista = venda.statusEntrega == StatusEntrega.A_CAMINHO ||
-                                venda.statusEntrega == StatusEntrega.SAIU_PARA_ENTREGA
-
-                        if (mostrarMotorista) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Icon(
-                                    imageVector = Icons.Default.Person,
-                                    contentDescription = null,
-                                    tint = Color.Blue,
-                                    modifier = Modifier.size(16.dp)
-                                )
-                                Spacer(modifier = Modifier.width(4.dp))
-                                Text("Motorista", style = MaterialTheme.typography.labelSmall)
-                            }
-                        }
-                    }
-                    // ==================================================================
-
-                    // Texto de última atualização
-                    if (localizacaoMotorista == null) {
-                        Text(
-                            "Aguardando localização do motorista...",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    } else {
-                        Text(
-                            "Última atualização: ${
-                                java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.getDefault())
-                                    .format(java.util.Date(localizacaoMotorista!!.timestamp))
-                            }",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
                     }
 
                     // Posição na fila (se aplicável)
