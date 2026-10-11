@@ -6,13 +6,25 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.DirectionsCar
+import androidx.compose.material.icons.filled.ExpandLess
+import androidx.compose.material.icons.filled.ExpandMore
+import androidx.compose.material.icons.filled.LocalShipping
+import androidx.compose.material.icons.automirrored.filled.Logout
+import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material3.*
+import androidx.compose.material3.MenuAnchorType
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
@@ -43,6 +55,13 @@ import com.example.marketplace.model.Veiculo
 import com.example.marketplace.model.Venda
 import java.time.format.DateTimeFormatter
 import java.util.jar.Manifest
+
+private enum class FiltroEntrega(val titulo: String) {
+    TODAS("Todas"),
+    DISPONIVEIS("Disponíveis"),
+    EM_ANDAMENTO("Em andamento"),
+    CONCLUIDAS("Concluídas")
+}
 
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -139,6 +158,10 @@ fun HomeMotoristaScreen(
     }
 
     var buscaEntregas by rememberSaveable { mutableStateOf("") }
+    var filtroSelecionado by rememberSaveable { mutableStateOf(FiltroEntrega.TODAS) }
+    var parceirosExpandidos by rememberSaveable { mutableStateOf(false) }
+    var veiculosExpandidos by rememberSaveable { mutableStateOf(false) }
+    var menuAcoesAberto by remember { mutableStateOf(false) }
     val entregasFiltradas = entregasMotorista.filter { venda ->
         val cliente = clientesMap[venda.compradorId]
         correspondeBusca(
@@ -151,6 +174,17 @@ fun HomeMotoristaScreen(
             cliente?.cidade,
             negociantes.find { it.uid == venda.vendedorId }?.nome
         )
+    }
+    val entregasDoFiltro = entregasFiltradas.filter { venda ->
+        when (filtroSelecionado) {
+            FiltroEntrega.TODAS -> true
+            FiltroEntrega.DISPONIVEIS -> venda.statusEntrega == StatusEntrega.PRONTO_PARA_ENTREGA
+            FiltroEntrega.EM_ANDAMENTO -> venda.statusEntrega in setOf(
+                StatusEntrega.A_CAMINHO,
+                StatusEntrega.SAIU_PARA_ENTREGA
+            )
+            FiltroEntrega.CONCLUIDAS -> venda.statusEntrega == StatusEntrega.ENTREGUE
+        }
     }
     // ------------------------------------------------
     // RASTREAMENTO GPS EM TEMPO REAL (SOMENTE SE HOUVER VENDA ATIVA)
@@ -199,285 +233,167 @@ fun HomeMotoristaScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Área do Motorista") },
+                title = { Text("IFSP Entregas", fontWeight = FontWeight.Bold) },
                 actions = {
-                    TextButton(onClick = onFilaEntregas) { Text("Minha Fila") }
-                    TextButton(onClick = {
-                        filaViewModel.limparFila(usuario.uid)
-                    }) {
-                        Text("Limpar Fila")
+                    IconButton(onClick = onFilaEntregas) {
+                        Icon(Icons.Default.LocalShipping, contentDescription = "Minha fila de entregas")
                     }
-                    TextButton(onClick = onLogout) { Text("Sair") }
+                    IconButton(onClick = { menuAcoesAberto = true }) {
+                        Icon(Icons.Default.MoreVert, contentDescription = "Mais opções")
+                    }
+                    DropdownMenu(
+                        expanded = menuAcoesAberto,
+                        onDismissRequest = { menuAcoesAberto = false }
+                    ) {
+                        DropdownMenuItem(
+                            text = { Text("Limpar minha fila") },
+                            onClick = {
+                                filaViewModel.limparFila(usuario.uid)
+                                menuAcoesAberto = false
+                            }
+                        )
+                        DropdownMenuItem(
+                            text = { Text("Sair da conta") },
+                            leadingIcon = { Icon(Icons.AutoMirrored.Filled.Logout, contentDescription = null) },
+                            onClick = {
+                                menuAcoesAberto = false
+                                onLogout()
+                            }
+                        )
+                    }
                 }
             )
         },
         floatingActionButton = {
-            FloatingActionButton(onClick = onCadastrarVeiculo) {
-                Text("+", style = MaterialTheme.typography.titleLarge)
-            }
+            ExtendedFloatingActionButton(
+                onClick = onCadastrarVeiculo,
+                icon = { Icon(Icons.Default.Add, contentDescription = null) },
+                text = { Text("Adicionar veículo") }
+            )
         }
     ) { padding ->
         LazyColumn(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(padding)
-                .padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
+                .padding(padding),
+            contentPadding = PaddingValues(start = 16.dp, top = 8.dp, end = 16.dp, bottom = 96.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
             item {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(18.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primary)
                 ) {
-                    AvatarUsuario(
-                        fotoBase64 = fotoPerfilAtual.ifEmpty { null },
-                        nome = usuario.nome,
-                        modifier = Modifier.size(56.dp),
-                        onClick = {
-                            photoPickerLauncher.launch(
-                                PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
-                            )
-                        }
-                    )
-                    Column {
-                        Text("Olá, ${usuario.nome}!", style = MaterialTheme.typography.headlineSmall)
-                        Text(
-                            "Toque na foto para alterá-la",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                }
-            }
-
-            // ------------------------------------------------
-            // VÍNCULOS COM NEGOCIANTES (MÚLTIPLOS / ILIMITADOS)
-            // ------------------------------------------------
-            item {
-                Card(modifier = Modifier.fillMaxWidth()) {
-                    Column(modifier = Modifier.padding(16.dp)) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text("Negociantes Parceiros", style = MaterialTheme.typography.titleMedium)
-                            Surface(
-                                color = MaterialTheme.colorScheme.primaryContainer,
-                                shape = RoundedCornerShape(8.dp)
-                            ) {
-                                Text(
-                                    text = "${parceirosVinculadosIds.size} vinculado(s)",
-                                    style = MaterialTheme.typography.labelMedium,
-                                    color = MaterialTheme.colorScheme.onPrimaryContainer,
-                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(18.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(14.dp)
+                    ) {
+                        AvatarUsuario(
+                            fotoBase64 = fotoPerfilAtual.ifEmpty { null },
+                            nome = usuario.nome,
+                            modifier = Modifier.size(58.dp),
+                            onClick = {
+                                photoPickerLauncher.launch(
+                                    PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
                                 )
                             }
-                        }
-
-                        Spacer(Modifier.height(4.dp))
-                        Text(
-                            text = "Filie-se a múltiplos negociantes para receber e entregar pedidos de várias lojas simultaneamente.",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
-
-                        Spacer(Modifier.height(12.dp))
-
-                        // Parceiros Atualmente Vinculados
-                        Text("Parceiros Vinculados:", style = MaterialTheme.typography.titleSmall)
-                        Spacer(Modifier.height(6.dp))
-
-                        if (parceirosVinculadosIds.isEmpty()) {
+                        Column(modifier = Modifier.weight(1f)) {
                             Text(
-                                "Você não está vinculado a nenhum parceiro no momento. Vincule-se abaixo para liberar entregas.",
-                                style = MaterialTheme.typography.bodySmall
+                                "CENTRAL DO ENTREGADOR",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.8f)
                             )
-                        } else {
-                            parceirosVinculadosIds.forEach { parceiroId ->
-                                val parceiro = negociantes.find { it.uid == parceiroId }
-                                val nomeParceiro = parceiro?.nome ?: "Parceiro #${parceiroId.take(6)}"
-
-                                Card(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(vertical = 4.dp),
-                                    colors = CardDefaults.cardColors(
-                                        containerColor = MaterialTheme.colorScheme.surfaceVariant
-                                    )
-                                ) {
-                                    Row(
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .padding(horizontal = 12.dp, vertical = 8.dp),
-                                        horizontalArrangement = Arrangement.SpaceBetween,
-                                        verticalAlignment = Alignment.CenterVertically
-                                    ) {
-                                        Column {
-                                            Text(nomeParceiro, fontWeight = FontWeight.SemiBold)
-                                            if (parceiro?.email?.isNotBlank() == true) {
-                                                Text(parceiro.email, style = MaterialTheme.typography.bodySmall)
-                                            }
-                                        }
-                                        OutlinedButton(
-                                            enabled = !vinculando,
-                                            colors = ButtonDefaults.outlinedButtonColors(
-                                                contentColor = MaterialTheme.colorScheme.error
-                                            ),
-                                            onClick = {
-                                                usuarioViewModel.desvincularNegociante(
-                                                    motoristaUid = usuario.uid,
-                                                    negocianteId = parceiroId
-                                                ) {
-                                                    parceirosVinculadosIds = parceirosVinculadosIds - parceiroId
-                                                }
-                                            }
-                                        ) {
-                                            Text("Desvincular")
-                                        }
-                                    }
-                                }
-                            }
-                        }
-
-                        Spacer(Modifier.height(14.dp))
-                        Divider()
-                        Spacer(Modifier.height(10.dp))
-
-                        // Parceiros Disponíveis para Vínculo
-                        val disponiveis = negociantes.filter { !parceirosVinculadosIds.contains(it.uid) }
-                        Text("Disponíveis para Vínculo:", style = MaterialTheme.typography.titleSmall)
-                        Spacer(Modifier.height(6.dp))
-
-                        if (disponiveis.isEmpty()) {
                             Text(
-                                if (negociantes.isEmpty()) "Carregando negociantes..."
-                                else "Você já está vinculado a todos os parceiros cadastrados!",
-                                style = MaterialTheme.typography.bodySmall
+                                "Olá, ${usuario.nome.substringBefore(' ')}!",
+                                style = MaterialTheme.typography.headlineSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onPrimary
                             )
-                        } else {
-                            disponiveis.forEach { negociante ->
-                                Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(vertical = 4.dp),
-                                    horizontalArrangement = Arrangement.SpaceBetween,
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Column(modifier = Modifier.weight(1f)) {
-                                        Text(negociante.nome, fontWeight = FontWeight.Medium)
-                                        if (negociante.cidade.isNotBlank()) {
-                                            Text("${negociante.cidade} - ${negociante.estado}", style = MaterialTheme.typography.bodySmall)
-                                        }
-                                    }
-                                    Button(
-                                        enabled = !vinculando,
-                                        onClick = {
-                                            usuarioViewModel.vincularNegociante(
-                                                motoristaUid = usuario.uid,
-                                                negocianteId = negociante.uid
-                                            ) {
-                                                parceirosVinculadosIds = parceirosVinculadosIds + negociante.uid
-                                            }
-                                        }
-                                    ) {
-                                        Text("Vincular")
-                                    }
+                            Text(
+                                "Vamos colocar os pedidos em movimento.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.9f)
+                            )
+                        }
+                    }
+                }
+            }
+
+            item {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    ResumoMotorista(
+                        valor = entregasMotorista.count { it.statusEntrega == StatusEntrega.PRONTO_PARA_ENTREGA },
+                        titulo = "Disponíveis",
+                        modifier = Modifier.weight(1f)
+                    )
+                    ResumoMotorista(
+                        valor = entregasMotorista.count {
+                            it.statusEntrega == StatusEntrega.A_CAMINHO ||
+                                    it.statusEntrega == StatusEntrega.SAIU_PARA_ENTREGA
+                        },
+                        titulo = "Em rota",
+                        modifier = Modifier.weight(1f)
+                    )
+                    ResumoMotorista(
+                        valor = entregasMotorista.count { it.statusEntrega == StatusEntrega.ENTREGUE },
+                        titulo = "Concluídas",
+                        modifier = Modifier.weight(1f)
+                    )
+                }
+            }
+
+            item {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.Bottom
+                    ) {
+                        Column {
+                            Text("Entregas", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                            Text(
+                                "${entregasMotorista.size} pedido(s) na sua área",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        TextButton(onClick = onFilaEntregas) { Text("Organizar fila") }
+                    }
+                    CampoBusca(
+                        valor = buscaEntregas,
+                        onValorChange = { buscaEntregas = it },
+                        placeholder = "Produto, cliente, loja ou endereço",
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Row(
+                        modifier = Modifier.horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        FiltroEntrega.values().forEach { filtro ->
+                            val quantidade = when (filtro) {
+                                FiltroEntrega.TODAS -> entregasFiltradas.size
+                                FiltroEntrega.DISPONIVEIS -> entregasFiltradas.count {
+                                    it.statusEntrega == StatusEntrega.PRONTO_PARA_ENTREGA
+                                }
+                                FiltroEntrega.EM_ANDAMENTO -> entregasFiltradas.count {
+                                    it.statusEntrega == StatusEntrega.A_CAMINHO ||
+                                            it.statusEntrega == StatusEntrega.SAIU_PARA_ENTREGA
+                                }
+                                FiltroEntrega.CONCLUIDAS -> entregasFiltradas.count {
+                                    it.statusEntrega == StatusEntrega.ENTREGUE
                                 }
                             }
+                            FilterChip(
+                                selected = filtroSelecionado == filtro,
+                                onClick = { filtroSelecionado = filtro },
+                                label = { Text("${filtro.titulo} $quantidade") }
+                            )
                         }
-                    }
-                }
-            }
-
-            // ------------------------------------------------
-            // MEUS VEÍCULOS (COM EDIÇÃO E EXCLUSÃO)
-            // ------------------------------------------------
-            item {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text("Meus veículos", style = MaterialTheme.typography.titleMedium)
-                    TextButton(onClick = onCadastrarVeiculo) {
-                        Text("+ Novo Veículo")
-                    }
-                }
-            }
-
-            if (veiculos.isEmpty()) {
-                item {
-                    Card(modifier = Modifier.fillMaxWidth()) {
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(16.dp),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Text("Nenhum veículo cadastrado ainda (toque no + para cadastrar)")
-                        }
-                    }
-                }
-            } else {
-                items(veiculos, key = { it.id }) { veiculo ->
-                    Card(modifier = Modifier.fillMaxWidth()) {
-                        Column(modifier = Modifier.padding(14.dp)) {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.Top
-                            ) {
-                                Column(modifier = Modifier.weight(1f)) {
-                                    Text(
-                                        "${veiculo.marca} ${veiculo.modelo}".trim(),
-                                        style = MaterialTheme.typography.titleMedium,
-                                        fontWeight = FontWeight.SemiBold
-                                    )
-                                    Spacer(Modifier.height(2.dp))
-                                    Text("Tipo: ${veiculo.tipo} • Placa: ${veiculo.placa}", style = MaterialTheme.typography.bodySmall)
-                                    Text("Ano: ${veiculo.ano} • Cor: ${veiculo.cor}", style = MaterialTheme.typography.bodySmall)
-                                }
-                                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                    OutlinedButton(
-                                        onClick = { veiculoEmEdicao = veiculo },
-                                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)
-                                    ) {
-                                        Text("Editar")
-                                    }
-                                    OutlinedButton(
-                                        onClick = { veiculoParaExcluir = veiculo },
-                                        colors = ButtonDefaults.outlinedButtonColors(
-                                            contentColor = MaterialTheme.colorScheme.error
-                                        ),
-                                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)
-                                    ) {
-                                        Text("Excluir")
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-
-            // ------------------------------------------------
-            // ENTREGAS / PEDIDOS
-            // ------------------------------------------------
-            item {
-                Spacer(Modifier.height(8.dp))
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text("Entregas de Pedidos", style = MaterialTheme.typography.titleMedium)
-                    if (entregasMotorista.isNotEmpty()) {
-                        Text(
-                            "${entregasMotorista.size} pedido(s)",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.primary
-                        )
                     }
                 }
             }
@@ -485,50 +401,52 @@ fun HomeMotoristaScreen(
             if (parceirosVinculadosIds.isEmpty()) {
                 item {
                     Card(modifier = Modifier.fillMaxWidth()) {
-                        Box(Modifier.padding(16.dp)) {
-                            Text("Vincule-se a pelo menos um parceiro acima para visualizar pedidos para entrega.")
-                        }
+                        Text(
+                            "Vincule-se a uma loja parceira para começar a receber pedidos.",
+                            modifier = Modifier.padding(16.dp),
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
                     }
                 }
-            } else if (entregasMotorista.isEmpty()) {
+            } else if (entregasDoFiltro.isEmpty()) {
                 item {
                     Card(modifier = Modifier.fillMaxWidth()) {
-                        Box(Modifier.padding(16.dp), contentAlignment = Alignment.Center) {
-                            Text("Nenhuma entrega disponível no momento para seus parceiros vinculados.")
+                        Column(
+                            modifier = Modifier.fillMaxWidth().padding(20.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            Icon(
+                                Icons.Default.LocalShipping,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(30.dp)
+                            )
+                            Text(
+                                if (buscaEntregas.isNotBlank()) "Nenhum pedido encontrado"
+                                else "Nenhuma entrega nesta categoria",
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                            Text(
+                                "Tente outro filtro ou volte mais tarde.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
                         }
                     }
                 }
             } else {
-                item {
-                    CampoBusca(
-                        valor = buscaEntregas,
-                        onValorChange = { buscaEntregas = it },
-                        placeholder = "Buscar por produto, cliente ou endereço",
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                }
-                if (entregasFiltradas.isEmpty()) {
-                    item {
-                        Text(
-                            "Nenhuma entrega encontrada para \"$buscaEntregas\".",
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.padding(8.dp)
-                        )
-                    }
-                }
-                items(entregasFiltradas, key = { it.id }) { venda ->
+                items(entregasDoFiltro, key = { it.id }) { venda ->
                     val cliente = clientesMap[venda.compradorId]
                     val parceiroVendedor = negociantes.find { it.uid == venda.vendedorId }
-
                     MotoristaEntregaCard(
                         venda = venda,
                         cliente = cliente,
                         parceiroVendedor = parceiroVendedor,
                         usuario = usuario,
                         veiculos = veiculos,
-                        onVerDetalhes = {
-                            vendaDetalheModal = venda
-                        },
+                        onVerDetalhes = { vendaDetalheModal = venda },
                         onAtualizarStatus = { novoStatus, veiculoId ->
                             vendaViewModel.avancarStatus(
                                 vendaId = venda.id,
@@ -539,6 +457,153 @@ fun HomeMotoristaScreen(
                             )
                         }
                     )
+                }
+            }
+
+            item {
+                Card(modifier = Modifier.fillMaxWidth()) {
+                    Column(modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text("Lojas parceiras", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                                Text(
+                                    "${parceirosVinculadosIds.size} vinculada(s)",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            IconButton(onClick = { parceirosExpandidos = !parceirosExpandidos }) {
+                                Icon(
+                                    if (parceirosExpandidos) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                                    contentDescription = if (parceirosExpandidos) "Recolher lojas" else "Expandir lojas"
+                                )
+                            }
+                        }
+                        if (parceirosExpandidos) {
+                            HorizontalDivider()
+                            Spacer(Modifier.height(8.dp))
+                            if (parceirosVinculadosIds.isEmpty()) {
+                                Text("Nenhuma loja vinculada ainda.", style = MaterialTheme.typography.bodySmall)
+                            }
+                            parceirosVinculadosIds.forEach { parceiroId ->
+                                val parceiro = negociantes.find { it.uid == parceiroId }
+                                Row(
+                                    modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(parceiro?.nome ?: "Loja parceira", fontWeight = FontWeight.Medium)
+                                        parceiro?.email?.takeIf { it.isNotBlank() }?.let {
+                                            Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                        }
+                                    }
+                                    TextButton(
+                                        enabled = !vinculando,
+                                        onClick = {
+                                            usuarioViewModel.desvincularNegociante(usuario.uid, parceiroId) {
+                                                parceirosVinculadosIds = parceirosVinculadosIds - parceiroId
+                                            }
+                                        }
+                                    ) { Text("Remover") }
+                                }
+                            }
+                            val disponiveis = negociantes.filter { it.uid !in parceirosVinculadosIds }
+                            if (disponiveis.isNotEmpty()) {
+                                Spacer(Modifier.height(8.dp))
+                                Text("Encontrar lojas", style = MaterialTheme.typography.titleSmall)
+                                disponiveis.forEach { negociante ->
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Column(modifier = Modifier.weight(1f)) {
+                                            Text(negociante.nome, fontWeight = FontWeight.Medium)
+                                            if (negociante.cidade.isNotBlank()) {
+                                                Text(
+                                                    "${negociante.cidade} - ${negociante.estado}",
+                                                    style = MaterialTheme.typography.bodySmall,
+                                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                                )
+                                            }
+                                        }
+                                        TextButton(
+                                            enabled = !vinculando,
+                                            onClick = {
+                                                usuarioViewModel.vincularNegociante(usuario.uid, negociante.uid) {
+                                                    parceirosVinculadosIds = parceirosVinculadosIds + negociante.uid
+                                                }
+                                            }
+                                        ) { Text("Vincular") }
+                                    }
+                                }
+                            } else if (negociantes.isEmpty()) {
+                                Text("Carregando lojas parceiras...", style = MaterialTheme.typography.bodySmall)
+                            }
+                        }
+                    }
+                }
+            }
+
+            item {
+                Card(modifier = Modifier.fillMaxWidth()) {
+                    Column(modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(Icons.Default.DirectionsCar, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                            Spacer(Modifier.width(10.dp))
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text("Meus veículos", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                                Text(
+                                    "${veiculos.size} cadastrado(s)",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            IconButton(onClick = { veiculosExpandidos = !veiculosExpandidos }) {
+                                Icon(
+                                    if (veiculosExpandidos) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                                    contentDescription = if (veiculosExpandidos) "Recolher veículos" else "Expandir veículos"
+                                )
+                            }
+                        }
+                        if (veiculosExpandidos) {
+                            HorizontalDivider()
+                            if (veiculos.isEmpty()) {
+                                Text("Cadastre um veículo para iniciar entregas.", modifier = Modifier.padding(vertical = 10.dp))
+                            }
+                            veiculos.forEach { veiculo ->
+                                Row(
+                                    modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text("${veiculo.marca} ${veiculo.modelo}".trim(), fontWeight = FontWeight.Medium)
+                                        Text(
+                                            "${veiculo.tipo} • ${veiculo.placa} • ${veiculo.cor}",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
+                                    IconButton(onClick = { veiculoEmEdicao = veiculo }) {
+                                        Icon(Icons.Default.Edit, contentDescription = "Editar ${veiculo.modelo}")
+                                    }
+                                    IconButton(onClick = { veiculoParaExcluir = veiculo }) {
+                                        Icon(Icons.Default.Delete, contentDescription = "Excluir ${veiculo.modelo}", tint = MaterialTheme.colorScheme.error)
+                                    }
+                                }
+                            }
+                            TextButton(onClick = onCadastrarVeiculo) {
+                                Icon(Icons.Default.Add, contentDescription = null)
+                                Spacer(Modifier.width(6.dp))
+                                Text("Cadastrar veículo")
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -595,6 +660,19 @@ fun HomeMotoristaScreen(
             veiculo = veiculoAlocado,
             onDismiss = { vendaDetalheModal = null }
         )
+    }
+}
+
+@Composable
+private fun ResumoMotorista(valor: Int, titulo: String, modifier: Modifier = Modifier) {
+    Card(modifier = modifier, colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
+        Column(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 14.dp),
+            verticalArrangement = Arrangement.spacedBy(2.dp)
+        ) {
+            Text(valor.toString(), style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+            Text(titulo, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
     }
 }
 
@@ -724,7 +802,7 @@ private fun MotoristaEntregaCard(
                                     trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = menuVeiculoAberto) },
                                     modifier = Modifier
                                         .fillMaxWidth()
-                                        .menuAnchor()
+                                        .menuAnchor(MenuAnchorType.PrimaryNotEditable)
                                 )
                                 ExposedDropdownMenu(
                                     expanded = menuVeiculoAberto,
@@ -1009,9 +1087,7 @@ private fun ConfirmarExclusaoVeiculoDialog(
             }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text("Cancelar")
-            }
+            TextButton(onClick = onDismiss) { Text("Cancelar") }
         }
     )
 }
@@ -1057,24 +1133,22 @@ private fun DetalhesVendaModal(
                     .verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                // SEÇÃO CLIENTE E ENDEREÇO DE ENTREGA
                 Card(
                     modifier = Modifier.fillMaxWidth(),
                     colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
                 ) {
                     Column(modifier = Modifier.padding(12.dp)) {
-                        Text("Dados do Cliente & Entrega", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+                        Text("Dados do cliente e entrega", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
                         Spacer(Modifier.height(4.dp))
                         Text("Nome: $nomeCliente", fontWeight = FontWeight.SemiBold)
                         if (cliente != null && cliente.email.isNotBlank()) {
-                            Text("Email: ${cliente.email}", style = MaterialTheme.typography.bodySmall)
+                            Text("E-mail: ${cliente.email}", style = MaterialTheme.typography.bodySmall)
                         }
-
                         Spacer(Modifier.height(8.dp))
-                        Text("Endereço de Entrega:", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
+                        Text("Endereço de entrega", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
                         if (cliente != null && cliente.rua.isNotBlank()) {
-                            Text("${cliente.rua}, Nº ${cliente.numero}")
-                            Text("Bairro / Cidade: ${cliente.cidade} - ${cliente.estado}")
+                            Text("${cliente.rua}, nº ${cliente.numero}")
+                            Text("${cliente.cidade} - ${cliente.estado}")
                             Text("CEP: ${cliente.cep}")
                         } else {
                             Text("Endereço detalhado não disponível no cadastro do cliente.", style = MaterialTheme.typography.bodySmall)
@@ -1082,65 +1156,61 @@ private fun DetalhesVendaModal(
                     }
                 }
 
-                // SEÇÃO PRODUTO E VALORES
                 Card(
                     modifier = Modifier.fillMaxWidth(),
                     colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
                 ) {
                     Column(modifier = Modifier.padding(12.dp)) {
-                        Text("Detalhes do Produto", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+                        Text("Detalhes do produto", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
                         Spacer(Modifier.height(4.dp))
                         Text("Item: $tituloProduto", fontWeight = FontWeight.SemiBold)
                         Text("Quantidade: ${venda.quantidade}")
                         if (venda.valorUnitario > 0.0) {
-                            Text("Valor Unitário: R$ %.2f".format(venda.valorUnitario))
+                            Text("Valor unitário: R$ %.2f".format(venda.valorUnitario))
                         }
                         Text(
-                            "Valor Total do Pedido: R$ %.2f".format(venda.valorTotal),
+                            "Valor total do pedido: R$ %.2f".format(venda.valorTotal),
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.primary
                         )
                     }
                 }
 
-                // SEÇÃO ORIGEM (NEGOCIANTE / LOJA)
                 Card(
                     modifier = Modifier.fillMaxWidth(),
                     colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
                 ) {
                     Column(modifier = Modifier.padding(12.dp)) {
-                        Text("Ponto de Coleta (Parceiro)", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+                        Text("Ponto de coleta", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
                         Spacer(Modifier.height(4.dp))
                         if (parceiroVendedor != null) {
                             Text("Loja: ${parceiroVendedor.nome}", fontWeight = FontWeight.SemiBold)
                             if (parceiroVendedor.rua.isNotBlank()) {
-                                Text("Endereço: ${parceiroVendedor.rua}, Nº ${parceiroVendedor.numero} - ${parceiroVendedor.cidade}")
+                                Text("${parceiroVendedor.rua}, nº ${parceiroVendedor.numero} - ${parceiroVendedor.cidade}")
                             }
                             if (parceiroVendedor.email.isNotBlank()) {
                                 Text("Contato: ${parceiroVendedor.email}", style = MaterialTheme.typography.bodySmall)
                             }
                         } else {
-                            Text("ID do Vendedor: ${venda.vendedorId}", style = MaterialTheme.typography.bodySmall)
+                            Text("ID do vendedor: ${venda.vendedorId}", style = MaterialTheme.typography.bodySmall)
                         }
                     }
                 }
 
-                // VEÍCULO ATRIBUÍDO (SE HOUVER)
                 if (veiculo != null) {
                     Card(
                         modifier = Modifier.fillMaxWidth(),
                         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
                     ) {
                         Column(modifier = Modifier.padding(12.dp)) {
-                            Text("Veículo da Entrega", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+                            Text("Veículo da entrega", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
                             Spacer(Modifier.height(4.dp))
-                            Text("${veiculo.modelo} - Placa: ${veiculo.placa}")
+                            Text("${veiculo.modelo} - placa ${veiculo.placa}")
                             Text("Tipo: ${veiculo.tipo} • Cor: ${veiculo.cor}", style = MaterialTheme.typography.bodySmall)
                         }
                     }
                 }
 
-                // DATA DO PEDIDO
                 val dataFormatada = try {
                     venda.dataCriacao.format(DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm"))
                 } catch (e: Exception) {
@@ -1148,17 +1218,15 @@ private fun DetalhesVendaModal(
                 }
                 if (dataFormatada.isNotBlank()) {
                     Text(
-                        "Data do Pedido: $dataFormatada",
+                        "Data do pedido: $dataFormatada",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
             }
         },
-        confirmButton = {
-            Button(onClick = onDismiss) {
-                Text("Fechar")
-            }
-        }
+        confirmButton = { Button(onClick = onDismiss) { Text("Fechar") } }
     )
 }
+
+// ============================================================
