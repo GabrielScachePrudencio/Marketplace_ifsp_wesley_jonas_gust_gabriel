@@ -3,7 +3,9 @@ package com.example.marketplace.controller
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.marketplace.repository.RastreioEntregaRepository
+import com.example.marketplace.repository.VendaRepository
 import com.example.marketplace.model.RastreioEntrega
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -17,7 +19,8 @@ sealed class FilaEntregasUiState {
 }
 
 class FilaEntregasViewModel(
-    private val repository: RastreioEntregaRepository
+    private val repository: RastreioEntregaRepository,
+    private val vendaRepository: VendaRepository? = null
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow<FilaEntregasUiState>(FilaEntregasUiState.Idle)
@@ -26,18 +29,23 @@ class FilaEntregasViewModel(
     private val _fila = MutableStateFlow<List<RastreioEntrega>>(emptyList())
     val fila: StateFlow<List<RastreioEntrega>> = _fila.asStateFlow()
 
+    private var filaJob: Job? = null
+
     fun carregarFilaDoMotorista(motoristaId: String, negociantesIds: List<String> = emptyList()) {
         if (motoristaId.isBlank()) {
             _fila.value = emptyList()
             return
         }
 
-        viewModelScope.launch {
+        filaJob?.cancel()
+        filaJob = viewModelScope.launch {
             try {
                 // Carrega a fila do motorista
                 repository.buscarFilaDoMotorista(motoristaId).collect { filaM ->
                     _fila.value = filaM
                 }
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
             } catch (e: Exception) {
                 _uiState.value = FilaEntregasUiState.Erro(e.message ?: "Erro ao carregar fila")
             }
@@ -62,6 +70,16 @@ class FilaEntregasViewModel(
             _uiState.value = FilaEntregasUiState.Loading
             try {
                 repository.iniciarEntrega(rastreioId, motoristaId, posicao)
+                val rastreio = _fila.value.find { it.id == rastreioId } ?: repository.buscarPorId(rastreioId)
+                if (rastreio != null && rastreio.vendaId.isNotBlank()) {
+                    try {
+                        vendaRepository?.atualizarStatusVenda(
+                            id = rastreio.vendaId,
+                            novoStatus = "A_CAMINHO",
+                            motoristaId = motoristaId
+                        )
+                    } catch (_: Exception) {}
+                }
                 _uiState.value = FilaEntregasUiState.Sucesso("Entrega iniciada")
                 onSucesso()
             } catch (e: Exception) {
@@ -75,7 +93,18 @@ class FilaEntregasViewModel(
         viewModelScope.launch {
             _uiState.value = FilaEntregasUiState.Loading
             try {
+                val rastreio = _fila.value.find { it.id == rastreioId } ?: repository.buscarPorId(rastreioId)
                 repository.finalizarEntrega(rastreioId, ultimaLat, ultimaLng)
+                if (rastreio != null && rastreio.vendaId.isNotBlank()) {
+                    try {
+                        vendaRepository?.atualizarStatusVenda(
+                            id = rastreio.vendaId,
+                            novoStatus = "ENTREGUE",
+                            perfil = "motorista",
+                            motoristaId = rastreio.motoristaId
+                        )
+                    } catch (_: Exception) {}
+                }
 
                 // AQUI: remove o item da fila imediatamente
                 _fila.value = _fila.value.filter { it.id != rastreioId }

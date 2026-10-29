@@ -210,25 +210,26 @@ fun HomeMotoristaScreen(
         }
     }
 
-    // Encontra a venda ativa DESTE motorista (A_CAMINHO ou SAIU_PARA_ENTREGA)
-    val vendaAtiva = entregasMotorista.find {
+    // Encontra todas as vendas ativas DESTE motorista (A_CAMINHO ou SAIU_PARA_ENTREGA)
+    val vendasAtivasIds = entregasMotorista.filter {
         it.motoristaId == usuario.uid &&
                 (it.statusEntrega == StatusEntrega.A_CAMINHO || it.statusEntrega == StatusEntrega.SAIU_PARA_ENTREGA)
-    }
+    }.map { it.id }
 
-    // Chave reativa: se a venda ativa mudar (iniciar ou finalizar), o efeito dispara
-    LaunchedEffect(vendaAtiva?.id, permissaoConcedida) {
-        if (vendaAtiva != null && permissaoConcedida) {
+    // Chave reativa: se as vendas ativas mudarem (iniciar ou finalizar), o efeito dispara
+    LaunchedEffect(vendasAtivasIds, permissaoConcedida) {
+        if (vendasAtivasIds.isNotEmpty() && permissaoConcedida) {
             // Só rastreia se tiver venda ativa e permissão
-            tracker.iniciar(vendaAtiva.id)
+            tracker.iniciar(vendasAtivasIds)
         } else {
-            // Se não tiver venda ativa ou permissão, para o rastreamento
-            tracker.pararSeAtivo()
+            // Se não tiver venda ativa ou permissão, para o rastreamento e limpa no servidor
+            tracker.pararSeAtivo(limparNoServidor = true)
         }
     }
 
     DisposableEffect(Unit) {
-        onDispose { tracker.pararSeAtivo() }
+        // Ao sair apenas da tela (ex: navegar para Fila de Entregas), para o callback local sem apagar a última posição no Firestore
+        onDispose { tracker.pararSeAtivo(limparNoServidor = false) }
     }
     Scaffold(
         topBar = {

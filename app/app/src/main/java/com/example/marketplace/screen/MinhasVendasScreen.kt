@@ -203,27 +203,32 @@ fun MinhasVendasScreen(
             onConfirmar = { ponto ->
                 vendaParaMarcarPronta = null
                 escopo.launch {
-                    val comp = comprador ?: run {
-                        val db = com.example.marketplace.data.local.AppDatabase.getDatabase(context)
-                        db.usuarioDao().buscarPorId(venda.compradorId)
-                    }
+                    val comp = comprador ?: usuarioViewModel.buscarUsuarioPorId(venda.compradorId)
 
-                    val coordenadas = if (comp?.latitude != null && comp.longitude != null && comp.latitude != 0.0) {
+                    val coordenadas = if (comp?.latitude != null && comp.longitude != null && comp.latitude != 0.0 && comp.longitude != 0.0) {
                         com.example.marketplace.service.Coordenadas(comp.latitude, comp.longitude)
-                    } else {
+                    } else if (comp != null) {
                         com.example.marketplace.service.GeocodingService.buscarCoordenadas(
-                            rua = comp?.rua ?: "",
-                            numero = comp?.numero ?: "",
-                            cidade = comp?.cidade ?: "",
-                            estado = comp?.estado ?: "",
-                            cep = comp?.cep ?: ""
+                            rua = comp.rua,
+                            numero = comp.numero,
+                            cidade = comp.cidade,
+                            estado = comp.estado,
+                            cep = comp.cep
                         )
-                    }
+                    } else null
+
+                    val enderecoTexto = comp?.let {
+                        val partes = listOf(
+                            listOf(it.rua, it.numero).filter { s -> s.isNotBlank() }.joinToString(", "),
+                            listOf(it.cidade, it.estado).filter { s -> s.isNotBlank() }.joinToString("/")
+                        ).filter { s -> s.isNotBlank() }
+                        partes.joinToString(" - ")
+                    }?.takeIf { it.isNotBlank() } ?: "Endereço do comprador"
 
                     viewModel.marcarProntoParaEntrega(
                         venda = venda,
                         pontoOrigemId = ponto.id,
-                        enderecoDestinoTexto = comp?.let { "${it.rua}, ${it.numero} - ${it.cidade}/${it.estado}" } ?: "",
+                        enderecoDestinoTexto = enderecoTexto,
                         destinoLat = coordenadas?.latitude ?: 0.0,
                         destinoLng = coordenadas?.longitude ?: 0.0
                     )

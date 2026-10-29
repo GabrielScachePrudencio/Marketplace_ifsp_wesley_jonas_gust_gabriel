@@ -122,15 +122,27 @@ class VendaRepository(
         }
 
         // Se mudou para PRONTO_PARA_ENTREGA e foi informado ponto de origem, cria rastreio
-        if (novoStatus == "PRONTO_PARA_ENTREGA" && !pontoOrigemId.isNullOrBlank()
-            && !enderecoDestino.isNullOrBlank() && destinoLat != null && destinoLng != null) {
+        if (novoStatus == "PRONTO_PARA_ENTREGA" && !pontoOrigemId.isNullOrBlank()) {
             rastreioEntregaRepository.criarRastreio(
                 vendaId = id,
                 pontoOrigemId = pontoOrigemId,
-                enderecoDestinoTexto = enderecoDestino,
-                destinoLat = destinoLat,
-                destinoLng = destinoLng
+                enderecoDestinoTexto = enderecoDestino ?: "",
+                destinoLat = destinoLat ?: 0.0,
+                destinoLng = destinoLng ?: 0.0
             )
+        } else if (novoStatus == "PRONTO_PARA_ENTREGA" && pontoOrigemId.isNullOrBlank()) {
+            // Motorista devolveu/cancelou a coleta -> limpa motorista do rastreio
+            rastreioEntregaRepository.cancelarColetaEntrega(id)
+        } else if (novoStatus == "A_CAMINHO" || novoStatus == "SAIU_PARA_ENTREGA") {
+            val rastreio = rastreioEntregaRepository.buscarPorVendaIdUmaVez(id)
+            if (rastreio != null && novoMotoristaId.isNotBlank()) {
+                rastreioEntregaRepository.iniciarEntrega(rastreio.id, novoMotoristaId)
+            }
+        } else if (novoStatus == "ENTREGUE") {
+            val rastreio = rastreioEntregaRepository.buscarPorVendaIdUmaVez(id)
+            if (rastreio != null) {
+                rastreioEntregaRepository.finalizarEntrega(rastreio.id, rastreio.ultimaLat, rastreio.ultimaLng)
+            }
         }
 
         return atualizada
@@ -147,6 +159,16 @@ class VendaRepository(
         } catch (e: Exception) {
             vendaDao.buscarPorId(id)
         }
+    }
+
+    /** Observa uma única venda em tempo real DIRETO do Firestore */
+    fun observarVendaPorId(id: String): Flow<Venda?> = callbackFlow {
+        val listener = colecao.document(id).addSnapshotListener { snapshot, erro ->
+            if (erro != null) return@addSnapshotListener
+            val venda = if (snapshot != null && snapshot.exists()) vendaDeDocumento(snapshot) else null
+            trySend(venda)
+        }
+        awaitClose { listener.remove() }
     }
 
     /** Lista em tempo real DIRETO do Firestore */

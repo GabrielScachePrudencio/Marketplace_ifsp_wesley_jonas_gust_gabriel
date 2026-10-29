@@ -243,6 +243,8 @@ fun CreateUsuarioScreen(
 
             Button(
                 onClick = {
+                    val latParsed = latitude.trim().replace(",", ".").toDoubleOrNull()
+                    val lngParsed = longitude.trim().replace(",", ".").toDoubleOrNull()
                     viewModel.cadastrar(
                         nome = nome,
                         email = email,
@@ -255,8 +257,8 @@ fun CreateUsuarioScreen(
                         cidade = cidade,
                         estado = estado,
                         cep = cep,
-                        latitude = latitude.toDoubleOrNull(),
-                        longitude = longitude.toDoubleOrNull(),
+                        latitude = latParsed,
+                        longitude = lngParsed,
                         fotoPerfil = fotoPerfilBase64
                     )
                 },

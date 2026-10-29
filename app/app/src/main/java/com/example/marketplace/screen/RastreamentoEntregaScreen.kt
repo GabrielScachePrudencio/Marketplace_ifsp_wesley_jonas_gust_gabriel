@@ -22,6 +22,7 @@ import com.example.marketplace.controller.RastreamentoEntregaViewModel
 import com.example.marketplace.controller.RastreamentoEntregaViewModelFactory
 import com.example.marketplace.model.Usuario
 import com.example.marketplace.model.enums.StatusEntrega
+import com.example.marketplace.service.GeocodingService
 import com.example.marketplace.service.PontoRota
 import com.example.marketplace.service.Rota
 import com.example.marketplace.service.RoteamentoService
@@ -94,25 +95,60 @@ fun RastreamentoEntregaScreen(
                     val mostrarMotorista = venda.statusEntrega == StatusEntrega.A_CAMINHO ||
                             venda.statusEntrega == StatusEntrega.SAIU_PARA_ENTREGA
 
-                    val destinoLat = rastreio?.destinoLat?.takeIf { it != 0.0 } ?: usuario.latitude ?: 0.0
-                    val destinoLng = rastreio?.destinoLng?.takeIf { it != 0.0 } ?: usuario.longitude ?: 0.0
+                    var destinoLatGeocodificado by remember(venda.id) { mutableStateOf<Double?>(null) }
+                    var destinoLngGeocodificado by remember(venda.id) { mutableStateOf<Double?>(null) }
+
+                    val destinoLatBase = rastreio?.destinoLat?.takeIf { it != 0.0 }
+                        ?: usuario.latitude?.takeIf { it != 0.0 }
+                        ?: destinoLatGeocodificado ?: 0.0
+                    val destinoLngBase = rastreio?.destinoLng?.takeIf { it != 0.0 }
+                        ?: usuario.longitude?.takeIf { it != 0.0 }
+                        ?: destinoLngGeocodificado ?: 0.0
+
+                    // Caso as coordenadas de destino não tenham sido salvas antes, geocodifica automaticamente
+                    LaunchedEffect(rastreio?.destinoLat, rastreio?.destinoLng, usuario.uid) {
+                        if (destinoLatBase == 0.0 || destinoLngBase == 0.0) {
+                            val coord = if (usuario.rua.isNotBlank() || usuario.cidade.isNotBlank() || usuario.cep.isNotBlank()) {
+                                GeocodingService.buscarCoordenadas(
+                                    rua = usuario.rua,
+                                    numero = usuario.numero,
+                                    cidade = usuario.cidade,
+                                    estado = usuario.estado,
+                                    cep = usuario.cep
+                                )
+                            } else if (!rastreio?.enderecoDestinoTexto.isNullOrBlank()) {
+                                GeocodingService.buscarCoordenadasPorTexto("${rastreio!!.enderecoDestinoTexto}, Brasil")
+                            } else null
+
+                            if (coord != null) {
+                                destinoLatGeocodificado = coord.latitude
+                                destinoLngGeocodificado = coord.longitude
+                            }
+                        }
+                    }
+
+                    val destinoLat = destinoLatBase
+                    val destinoLng = destinoLngBase
 
                     // ================== ROTA ==================
                     var rota by remember { mutableStateOf<Rota?>(null) }
                     var ultimoPontoCalculado by remember { mutableStateOf<PontoRota?>(null) }
+                    var ultimoModoMotorista by remember { mutableStateOf<Boolean?>(null) }
 
                     LaunchedEffect(mostrarMotorista, localizacaoMotorista, pontoOrigem, destinoLat, destinoLng) {
                         if (destinoLat == 0.0 || destinoLng == 0.0) return@LaunchedEffect
 
+                        val usandoMotorista = mostrarMotorista && localizacaoMotorista != null
+
                         // Em rota: motorista -> destino. Antes disso: loja -> destino (prévia).
-                        val partida = if (mostrarMotorista && localizacaoMotorista != null) {
+                        val partida = if (usandoMotorista) {
                             PontoRota(localizacaoMotorista!!.latitude, localizacaoMotorista!!.longitude)
                         } else pontoOrigem?.let { PontoRota(it.latitude, it.longitude) }
                             ?: return@LaunchedEffect
 
-                        // Só recalcula se o ponto de partida andou mais de 50 m desde o último cálculo
+                        // Só recalcula se mudou de modo (loja -> motorista) ou se o ponto de partida andou mais de 50 m
                         val anterior = ultimoPontoCalculado
-                        if (anterior != null && rota != null) {
+                        if (anterior != null && rota != null && ultimoModoMotorista == usandoMotorista) {
                             val d = FloatArray(1)
                             android.location.Location.distanceBetween(
                                 anterior.latitude, anterior.longitude,
@@ -124,6 +160,7 @@ fun RastreamentoEntregaScreen(
                         RoteamentoService.buscarRota(listOf(partida, PontoRota(destinoLat, destinoLng)))?.let {
                             rota = it
                             ultimoPontoCalculado = partida
+                            ultimoModoMotorista = usandoMotorista
                         }
                     }
 
