@@ -71,6 +71,7 @@ fun HomeMotoristaScreen(
     veiculos: List<Veiculo>,
     onCadastrarVeiculo: () -> Unit,
     onFilaEntregas: () -> Unit = {},
+    onVerRota: (String) -> Unit = {},
     onLogout: () -> Unit
 ) {
     val context = LocalContext.current
@@ -448,6 +449,7 @@ fun HomeMotoristaScreen(
                         usuario = usuario,
                         veiculos = veiculos,
                         onVerDetalhes = { vendaDetalheModal = venda },
+                        onVerRota = { onVerRota(venda.id) },
                         onAtualizarStatus = { novoStatus, veiculoId ->
                             vendaViewModel.avancarStatus(
                                 vendaId = venda.id,
@@ -689,6 +691,7 @@ private fun MotoristaEntregaCard(
     usuario: Usuario,
     veiculos: List<Veiculo>,
     onVerDetalhes: () -> Unit,
+    onVerRota: () -> Unit,
     onAtualizarStatus: (String, String?) -> Unit
 ) {
     val status = venda.statusEntrega
@@ -770,6 +773,19 @@ private fun MotoristaEntregaCard(
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Text("Ver Detalhes do Pedido e Endereço")
+            }
+
+            if (status == StatusEntrega.PRONTO_PARA_ENTREGA ||
+                status == StatusEntrega.SAIU_PARA_ENTREGA ||
+                status == StatusEntrega.A_CAMINHO
+            ) {
+                Spacer(Modifier.height(6.dp))
+                FilledTonalButton(
+                    onClick = onVerRota,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("Ver Rota no Mapa")
+                }
             }
 
             Spacer(Modifier.height(8.dp))

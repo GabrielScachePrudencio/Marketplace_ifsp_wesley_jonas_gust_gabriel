@@ -4,9 +4,11 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.marketplace.repository.PontoReferenciaRepository
 import com.example.marketplace.repository.RastreioEntregaRepository
+import com.example.marketplace.repository.UsuarioRepository
 import com.example.marketplace.repository.VendaRepository
 import com.example.marketplace.model.PontoReferencia
 import com.example.marketplace.model.RastreioEntrega
+import com.example.marketplace.model.Usuario
 import com.example.marketplace.model.Venda
 import com.google.firebase.firestore.ListenerRegistration
 import kotlinx.coroutines.Job
@@ -22,7 +24,8 @@ sealed class RastreamentoEntregaUiState {
     data class Carregado(
         val venda: Venda,
         val rastreio: RastreioEntrega?,
-        val pontoOrigem: PontoReferencia?
+        val pontoOrigem: PontoReferencia?,
+        val comprador: Usuario? = null
     ) : RastreamentoEntregaUiState()
     data class Erro(val mensagem: String) : RastreamentoEntregaUiState()
 }
@@ -36,7 +39,8 @@ data class LocalizacaoMotorista(
 class RastreamentoEntregaViewModel(
     private val vendaRepository: VendaRepository,
     private val rastreioEntregaRepository: RastreioEntregaRepository,
-    private val pontoReferenciaRepository: PontoReferenciaRepository
+    private val pontoReferenciaRepository: PontoReferenciaRepository,
+    private val usuarioRepository: UsuarioRepository? = null
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow<RastreamentoEntregaUiState>(RastreamentoEntregaUiState.Idle)
@@ -59,6 +63,10 @@ class RastreamentoEntregaViewModel(
                     return@launch
                 }
 
+                val comprador = if (vendaInicial.compradorId.isNotBlank()) {
+                    usuarioRepository?.buscarUsuario(vendaInicial.compradorId)
+                } else null
+
                 val rastreioInicial = rastreioEntregaRepository.buscarPorVendaIdUmaVez(vendaId)
                 var pontoOrigemCache: PontoReferencia? = null
                 var ultimoPontoOrigemId = ""
@@ -68,7 +76,12 @@ class RastreamentoEntregaViewModel(
                     ultimoPontoOrigemId = rastreioInicial.pontoOrigemId
                 }
 
-                _uiState.value = RastreamentoEntregaUiState.Carregado(vendaInicial, rastreioInicial, pontoOrigemCache)
+                _uiState.value = RastreamentoEntregaUiState.Carregado(
+                    venda = vendaInicial,
+                    rastreio = rastreioInicial,
+                    pontoOrigem = pontoOrigemCache,
+                    comprador = comprador
+                )
 
                 // Sempre escuta localização em tempo real (mesmo sem rastreio ainda)
                 escutarLocalizacaoTempoReal(vendaId)
@@ -88,7 +101,8 @@ class RastreamentoEntregaViewModel(
                     _uiState.value = RastreamentoEntregaUiState.Carregado(
                         venda = vendaAtual,
                         rastreio = rastreioAtual,
-                        pontoOrigem = pontoOrigemCache
+                        pontoOrigem = pontoOrigemCache,
+                        comprador = comprador
                     )
                 }
             } catch (e: kotlinx.coroutines.CancellationException) {

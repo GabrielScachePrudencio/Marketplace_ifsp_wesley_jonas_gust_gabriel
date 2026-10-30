@@ -1,5 +1,6 @@
 package com.example.marketplace.screen
 
+import android.content.pm.PackageManager
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -16,10 +17,12 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.marketplace.controller.RastreamentoEntregaUiState
 import com.example.marketplace.controller.RastreamentoEntregaViewModel
 import com.example.marketplace.controller.RastreamentoEntregaViewModelFactory
+import com.example.marketplace.model.LocalizacaoMotoristaTracker
 import com.example.marketplace.model.Usuario
 import com.example.marketplace.model.enums.StatusEntrega
 import com.example.marketplace.service.GeocodingService
@@ -54,11 +57,12 @@ fun RastreamentoEntregaScreen(
 
     val uiState by viewModel.uiState.collectAsState()
     val localizacaoMotorista by viewModel.localizacaoMotorista.collectAsState()
+    val ehMotorista = usuario.perfil == "motorista"
 
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Rastrear Entrega") },
+                title = { Text(if (ehMotorista) "Rota da Entrega" else "Rastrear Entrega") },
                 navigationIcon = {
                     IconButton(onClick = onVoltar) {
                         Icon(Icons.Default.ArrowBack, contentDescription = "Voltar")
@@ -90,31 +94,54 @@ fun RastreamentoEntregaScreen(
                     val venda = estado.venda
                     val rastreio = estado.rastreio
                     val pontoOrigem = estado.pontoOrigem
+                    val comprador = estado.comprador
+                    val usuarioDestino = if (ehMotorista) comprador else (comprador ?: usuario)
 
                     // O motorista só aparece se o status for A_CAMINHO ou SAIU_PARA_ENTREGA.
                     val mostrarMotorista = venda.statusEntrega == StatusEntrega.A_CAMINHO ||
                             venda.statusEntrega == StatusEntrega.SAIU_PARA_ENTREGA
 
+                    // Se quem abriu o mapa é o motorista desta entrega, mantém o GPS enviando em tempo real
+                    if (ehMotorista) {
+                        val tracker = remember { LocalizacaoMotoristaTracker(context) }
+                        val temPermissaoGps = remember {
+                            ContextCompat.checkSelfPermission(
+                                context,
+                                android.Manifest.permission.ACCESS_FINE_LOCATION
+                            ) == PackageManager.PERMISSION_GRANTED
+                        }
+                        LaunchedEffect(venda.id, mostrarMotorista, temPermissaoGps) {
+                            if (mostrarMotorista && venda.motoristaId == usuario.uid && temPermissaoGps) {
+                                tracker.iniciar(venda.id)
+                            } else {
+                                tracker.pararSeAtivo(limparNoServidor = false)
+                            }
+                        }
+                        DisposableEffect(Unit) {
+                            onDispose { tracker.pararSeAtivo(limparNoServidor = false) }
+                        }
+                    }
+
                     var destinoLatGeocodificado by remember(venda.id) { mutableStateOf<Double?>(null) }
                     var destinoLngGeocodificado by remember(venda.id) { mutableStateOf<Double?>(null) }
 
                     val destinoLatBase = rastreio?.destinoLat?.takeIf { it != 0.0 }
-                        ?: usuario.latitude?.takeIf { it != 0.0 }
+                        ?: usuarioDestino?.latitude?.takeIf { it != 0.0 }
                         ?: destinoLatGeocodificado ?: 0.0
                     val destinoLngBase = rastreio?.destinoLng?.takeIf { it != 0.0 }
-                        ?: usuario.longitude?.takeIf { it != 0.0 }
+                        ?: usuarioDestino?.longitude?.takeIf { it != 0.0 }
                         ?: destinoLngGeocodificado ?: 0.0
 
                     // Caso as coordenadas de destino não tenham sido salvas antes, geocodifica automaticamente
-                    LaunchedEffect(rastreio?.destinoLat, rastreio?.destinoLng, usuario.uid) {
+                    LaunchedEffect(rastreio?.destinoLat, rastreio?.destinoLng, usuarioDestino?.uid) {
                         if (destinoLatBase == 0.0 || destinoLngBase == 0.0) {
-                            val coord = if (usuario.rua.isNotBlank() || usuario.cidade.isNotBlank() || usuario.cep.isNotBlank()) {
+                            val coord = if (usuarioDestino != null && (usuarioDestino.rua.isNotBlank() || usuarioDestino.cidade.isNotBlank() || usuarioDestino.cep.isNotBlank())) {
                                 GeocodingService.buscarCoordenadas(
-                                    rua = usuario.rua,
-                                    numero = usuario.numero,
-                                    cidade = usuario.cidade,
-                                    estado = usuario.estado,
-                                    cep = usuario.cep
+                                    rua = usuarioDestino.rua,
+                                    numero = usuarioDestino.numero,
+                                    cidade = usuarioDestino.cidade,
+                                    estado = usuarioDestino.estado,
+                                    cep = usuarioDestino.cep
                                 )
                             } else if (!rastreio?.enderecoDestinoTexto.isNullOrBlank()) {
                                 GeocodingService.buscarCoordenadasPorTexto("${rastreio!!.enderecoDestinoTexto}, Brasil")
@@ -197,8 +224,8 @@ fun RastreamentoEntregaScreen(
                         }
                     }
 
-                    // ================== TEMPO ESTIMADO DE CHEGADA ==================
-                    if (mostrarMotorista) {
+                    // ================== TEMPO ESTIMADO DE CHEGADA / TRAJETO ==================
+                    if (mostrarMotorista || (ehMotorista && rota != null)) {
                         Card(
                             modifier = Modifier.fillMaxWidth(),
                             colors = CardDefaults.cardColors(
@@ -210,17 +237,18 @@ fun RastreamentoEntregaScreen(
                                 horizontalAlignment = Alignment.CenterHorizontally
                             ) {
                                 val r = rota
-                                if (r != null && localizacaoMotorista != null) {
+                                if (r != null && (localizacaoMotorista != null || !mostrarMotorista)) {
                                     val chegada = java.text.SimpleDateFormat("HH:mm", java.util.Locale.getDefault())
                                         .format(java.util.Date(System.currentTimeMillis() + (r.duracaoSegundos * 1000).toLong()))
                                     Text(
-                                        "Chega em ~${r.duracaoTexto}",
+                                        if (mostrarMotorista) "Chega em ~${r.duracaoTexto}" else "Trajeto estimado: ~${r.duracaoTexto}",
                                         style = MaterialTheme.typography.headlineSmall,
                                         fontWeight = FontWeight.Bold,
                                         color = MaterialTheme.colorScheme.onPrimaryContainer
                                     )
                                     Text(
-                                        "${r.distanciaTexto} de distância • previsão ~$chegada",
+                                        if (mostrarMotorista) "${r.distanciaTexto} de distância • previsão ~$chegada"
+                                        else "${r.distanciaTexto} da loja até o cliente",
                                         style = MaterialTheme.typography.bodyMedium,
                                         color = MaterialTheme.colorScheme.onPrimaryContainer
                                     )
@@ -317,7 +345,8 @@ fun RastreamentoEntregaScreen(
                     // Texto de última atualização
                     if (localizacaoMotorista == null) {
                         Text(
-                            "Aguardando localização do motorista...",
+                            if (ehMotorista && !mostrarMotorista) "Inicie a entrega para ativar o rastreamento por GPS em tempo real."
+                            else "Aguardando localização do motorista...",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -403,9 +432,19 @@ fun RastreamentoEntregaScreen(
                                     fontWeight = FontWeight.Bold
                                 )
 
+                                val nomeCliente = venda.compradorNome.ifBlank { comprador?.nome ?: "" }
+                                if (ehMotorista && nomeCliente.isNotBlank()) {
+                                    Text(
+                                        "Cliente: $nomeCliente",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+
                                 val enderecoDestino = when {
                                     !rastreio?.enderecoDestinoTexto.isNullOrBlank() -> rastreio!!.enderecoDestinoTexto
-                                    usuario.rua.isNotBlank() -> "${usuario.rua}, ${usuario.numero} - ${usuario.cidade}/${usuario.estado}"
+                                    usuarioDestino != null && usuarioDestino.rua.isNotBlank() ->
+                                        "${usuarioDestino.rua}, ${usuarioDestino.numero} - ${usuarioDestino.cidade}/${usuarioDestino.estado}"
                                     else -> "Endereço será configurado quando o pedido estiver pronto para entrega."
                                 }
 
@@ -431,7 +470,8 @@ fun RastreamentoEntregaScreen(
                                 horizontalAlignment = Alignment.CenterHorizontally
                             ) {
                                 Text(
-                                    "Sua entrega é a #${rastreio.posicaoNaFila} da rota",
+                                    if (ehMotorista) "Entrega #${rastreio.posicaoNaFila} da sua fila"
+                                    else "Sua entrega é a #${rastreio.posicaoNaFila} da rota",
                                     style = MaterialTheme.typography.titleMedium,
                                     fontWeight = FontWeight.Bold,
                                     color = MaterialTheme.colorScheme.onTertiaryContainer
@@ -450,7 +490,8 @@ fun RastreamentoEntregaScreen(
                                 )
                             ) {
                                 Text(
-                                    "Seu pedido está pendente. Aguardando o vendedor preparar.",
+                                    if (ehMotorista) "Pedido pendente na loja."
+                                    else "Seu pedido está pendente. Aguardando o vendedor preparar.",
                                     modifier = Modifier.padding(16.dp),
                                     style = MaterialTheme.typography.bodyMedium
                                 )
@@ -464,7 +505,8 @@ fun RastreamentoEntregaScreen(
                                 )
                             ) {
                                 Text(
-                                    "Seu pedido está pronto e aguardando o motorista.",
+                                    if (ehMotorista) "Pedido pronto para coleta no ponto de origem acima."
+                                    else "Seu pedido está pronto e aguardando o motorista.",
                                     modifier = Modifier.padding(16.dp),
                                     style = MaterialTheme.typography.bodyMedium
                                 )
@@ -478,7 +520,8 @@ fun RastreamentoEntregaScreen(
                                 )
                             ) {
                                 Text(
-                                    "O motorista está a caminho! Acompanhe a localização em tempo real.",
+                                    if (ehMotorista) "Siga a rota destacada no mapa até o endereço do cliente."
+                                    else "O motorista está a caminho! Acompanhe a localização em tempo real.",
                                     modifier = Modifier.padding(16.dp),
                                     style = MaterialTheme.typography.bodyMedium
                                 )

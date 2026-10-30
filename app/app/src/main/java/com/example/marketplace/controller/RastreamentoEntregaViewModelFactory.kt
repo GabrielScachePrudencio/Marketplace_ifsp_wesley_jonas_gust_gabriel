@@ -6,6 +6,7 @@ import androidx.lifecycle.ViewModelProvider
 import com.example.marketplace.data.local.AppDatabase
 import com.example.marketplace.repository.PontoReferenciaRepository
 import com.example.marketplace.repository.RastreioEntregaRepository
+import com.example.marketplace.repository.UsuarioRepository
 import com.example.marketplace.repository.VendaRepository
 
 class RastreamentoEntregaViewModelFactory(
@@ -32,11 +33,17 @@ class RastreamentoEntregaViewModelFactory(
             db.pendenteSycronizacaoDao()
         )
 
+        val usuarioRepository = UsuarioRepository(
+            db.usuarioDao(),
+            db.pendenteSycronizacaoDao()
+        )
+
         @Suppress("UNCHECKED_CAST")
         return RastreamentoEntregaViewModel(
             vendaRepository,
             rastreioEntregaRepository,
-            pontoReferenciaRepository
+            pontoReferenciaRepository,
+            usuarioRepository
         ) as T
     }
 }

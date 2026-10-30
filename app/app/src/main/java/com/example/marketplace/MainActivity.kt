@@ -63,7 +63,8 @@ enum class TelaApp {
 enum class TelaMotorista {
     HOME,
     CADASTRAR_VEICULO,
-    FILA_ENTREGAS
+    FILA_ENTREGAS,
+    RASTREAMENTO_ENTREGA
 }
 
 
@@ -192,6 +193,13 @@ class MainActivity : ComponentActivity() {
                                 )
                             }
 
+                            var vendaRastreioId by remember {
+                                mutableStateOf<String?>(null)
+                            }
+                            var telaAnteriorRastreio by remember {
+                                mutableStateOf(TelaMotorista.HOME)
+                            }
+
 
                             // -----------------------------------------
                             // SINCRONIZA FIREBASE -> ROOM
@@ -236,6 +244,12 @@ class MainActivity : ComponentActivity() {
 
                                         onFilaEntregas = {
                                             telaMotorista = TelaMotorista.FILA_ENTREGAS
+                                        },
+
+                                        onVerRota = { vendaId ->
+                                            vendaRastreioId = vendaId
+                                            telaAnteriorRastreio = TelaMotorista.HOME
+                                            telaMotorista = TelaMotorista.RASTREAMENTO_ENTREGA
                                         },
 
                                         onLogout = onLogout
@@ -291,8 +305,32 @@ class MainActivity : ComponentActivity() {
                                         usuario = usuario,
                                         onVoltar = {
                                             telaMotorista = TelaMotorista.HOME
+                                        },
+                                        onVerRota = { vendaId ->
+                                            vendaRastreioId = vendaId
+                                            telaAnteriorRastreio = TelaMotorista.FILA_ENTREGAS
+                                            telaMotorista = TelaMotorista.RASTREAMENTO_ENTREGA
                                         }
                                     )
+                                }
+
+                                // =====================================
+                                // RASTREAMENTO / ROTA DA ENTREGA
+                                // =====================================
+
+                                TelaMotorista.RASTREAMENTO_ENTREGA -> {
+                                    val vendaId = vendaRastreioId
+                                    if (vendaId != null) {
+                                        RastreamentoEntregaScreen(
+                                            usuario = usuario,
+                                            vendaId = vendaId,
+                                            onVoltar = {
+                                                telaMotorista = telaAnteriorRastreio
+                                            }
+                                        )
+                                    } else {
+                                        telaMotorista = TelaMotorista.HOME
+                                    }
                                 }
                             }
                         }
