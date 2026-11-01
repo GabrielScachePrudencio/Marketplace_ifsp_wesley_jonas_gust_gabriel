@@ -36,7 +36,9 @@ object RoteamentoService {
         if (paradas.size < 2) return@withContext null
         var conexao: HttpURLConnection? = null
         try {
-            val coords = paradas.joinToString(";") { "${it.longitude},${it.latitude}" }
+            val coords = paradas.joinToString(";") {
+                String.format(java.util.Locale.US, "%.6f,%.6f", it.longitude, it.latitude)
+            }
             val url = URL("$BASE_URL/$coords?overview=full&geometries=geojson")
             conexao = (url.openConnection() as HttpURLConnection).apply {
                 connectTimeout = 8000

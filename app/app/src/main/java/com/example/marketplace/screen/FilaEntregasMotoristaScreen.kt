@@ -29,7 +29,8 @@ import com.example.marketplace.util.RequestLocationPermission
 @Composable
 fun FilaEntregasMotoristaScreen(
     usuario: Usuario,
-    onVoltar: () -> Unit
+    onVoltar: () -> Unit,
+    onVerRota: (String) -> Unit = {}
 ) {
     val context = LocalContext.current
     val viewModel: FilaEntregasViewModel = viewModel(
@@ -115,6 +116,11 @@ fun FilaEntregasMotoristaScreen(
                             onMoverParaBaixo = if (index < fila.size - 1) {
                                 { moverItem(viewModel, fila, index, index + 1) }
                             } else null,
+                            onVerRota = {
+                                if (rastreio.vendaId.isNotBlank()) {
+                                    onVerRota(rastreio.vendaId)
+                                }
+                            },
                             onIniciar = {
                                 if (!hasLocationPermission) {
                                     locationPermissionLauncher.launch(android.Manifest.permission.ACCESS_FINE_LOCATION)
@@ -203,6 +209,7 @@ fun FilaEntregaCard(
     posicao: Int,
     onMoverParaCima: (() -> Unit)?,
     onMoverParaBaixo: (() -> Unit)?,
+    onVerRota: () -> Unit = {},
     onIniciar: () -> Unit,
     onFinalizar: () -> Unit
 ) {
@@ -303,6 +310,14 @@ fun FilaEntregaCard(
                     ) {
                         Text("Entregar", style = MaterialTheme.typography.labelSmall)
                     }
+                }
+
+                OutlinedButton(
+                    onClick = onVerRota,
+                    modifier = Modifier.height(32.dp),
+                    contentPadding = PaddingValues(horizontal = 8.dp)
+                ) {
+                    Text("Rota", style = MaterialTheme.typography.labelSmall)
                 }
             }
         }

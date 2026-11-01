@@ -139,12 +139,18 @@ fun MapaRastreamento(
 
         // ---------- 2) Câmera: só enquadra quando REALMENTE precisa ----------
         // Com motorista na rua, enquadramos só motorista + destino (a loja já ficou para trás).
-        val pontosEnquadrar = if (pMotorista != null) listOfNotNull(pMotorista, pDestino)
+        val pontosMarcadores = if (pMotorista != null) listOfNotNull(pMotorista, pDestino)
         else listOfNotNull(pOrigem, pDestino)
+
+        val pontosEnquadrar = if (pontosRota.size >= 2) {
+            (pontosMarcadores + pontosRota).distinct()
+        } else {
+            pontosMarcadores
+        }
 
         val etapaAtual = when {
             pMotorista != null -> 2
-            pontosEnquadrar.isNotEmpty() -> 1
+            pontosMarcadores.isNotEmpty() -> 1
             else -> 0
         }
 
@@ -158,11 +164,15 @@ fun MapaRastreamento(
             camera.ultimoPedidoManual = pedidoManual
             if (pediuManual) camera.usuarioMexeu = false
 
-            if (pontosEnquadrar.size == 1) {
-                mapView.controller.setZoom(16.0)
-                mapView.controller.setCenter(pontosEnquadrar.first())
-            } else {
-                mapView.zoomToBoundingBox(BoundingBox.fromGeoPoints(pontosEnquadrar), true, 120)
+            mapView.post {
+                val box = BoundingBox.fromGeoPoints(pontosEnquadrar)
+                val distanciaMinima = box.latNorth - box.latSouth < 0.0001 && box.lonEast - box.lonWest < 0.0001
+                if (pontosEnquadrar.size == 1 || distanciaMinima) {
+                    mapView.controller.setZoom(16.0)
+                    mapView.controller.setCenter(pontosEnquadrar.first())
+                } else {
+                    mapView.zoomToBoundingBox(box, true, 120)
+                }
             }
         }
 

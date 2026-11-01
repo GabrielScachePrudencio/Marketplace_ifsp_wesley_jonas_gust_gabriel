@@ -103,6 +103,21 @@ class CadastroViewModel(
             _uiState.value = CadastroUiState.Loading
 
             try {
+                var latFinal = latitude
+                var lngFinal = longitude
+                if (latFinal == null || lngFinal == null || (latFinal == 0.0 && lngFinal == 0.0)) {
+                    val coord = com.example.marketplace.service.GeocodingService.buscarCoordenadas(
+                        rua = rua,
+                        numero = numero,
+                        cidade = cidade,
+                        estado = estado,
+                        cep = cep
+                    )
+                    if (coord != null) {
+                        latFinal = coord.latitude
+                        lngFinal = coord.longitude
+                    }
+                }
 
                 val usuario = repository.cadastrar(
                     nome = nome,
@@ -115,8 +130,8 @@ class CadastroViewModel(
                     cidade = cidade,
                     estado = estado,
                     cep = cep,
-                    latitude = latitude,
-                    longitude = longitude,
+                    latitude = latFinal,
+                    longitude = lngFinal,
                     fotoPerfil = fotoPerfil
                 )
 

@@ -61,6 +61,7 @@ fun MinhasVendasScreen(
 
     // NOVO: estado do diálogo de escolha de ponto de origem
     var vendaParaMarcarPronta by remember { mutableStateOf<Venda?>(null) }
+    var vendaParaCancelar by remember { mutableStateOf<Venda?>(null) }
 
     var usuariosRelacionados by remember { mutableStateOf<Map<String, Usuario>>(emptyMap()) }
 
@@ -175,6 +176,9 @@ fun MinhasVendasScreen(
                         },
                         onMarcarProntoParaEntrega = {
                             vendaParaMarcarPronta = venda
+                        },
+                        onCancelarCompra = {
+                            vendaParaCancelar = venda
                         }
                     )
                 }
@@ -203,33 +207,71 @@ fun MinhasVendasScreen(
             onConfirmar = { ponto ->
                 vendaParaMarcarPronta = null
                 escopo.launch {
-                    val comp = comprador ?: run {
-                        val db = com.example.marketplace.data.local.AppDatabase.getDatabase(context)
-                        db.usuarioDao().buscarPorId(venda.compradorId)
-                    }
+                    val comp = comprador ?: usuarioViewModel.buscarUsuarioPorId(venda.compradorId)
 
-                    val coordenadas = if (comp?.latitude != null && comp.longitude != null && comp.latitude != 0.0) {
+                    val coordenadas = if (comp?.latitude != null && comp.longitude != null && comp.latitude != 0.0 && comp.longitude != 0.0) {
                         com.example.marketplace.service.Coordenadas(comp.latitude, comp.longitude)
-                    } else {
+                    } else if (comp != null) {
                         com.example.marketplace.service.GeocodingService.buscarCoordenadas(
-                            rua = comp?.rua ?: "",
-                            numero = comp?.numero ?: "",
-                            cidade = comp?.cidade ?: "",
-                            estado = comp?.estado ?: "",
-                            cep = comp?.cep ?: ""
+                            rua = comp.rua,
+                            numero = comp.numero,
+                            cidade = comp.cidade,
+                            estado = comp.estado,
+                            cep = comp.cep
                         )
-                    }
+                    } else null
+
+                    val enderecoTexto = comp?.let {
+                        val partes = listOf(
+                            listOf(it.rua, it.numero).filter { s -> s.isNotBlank() }.joinToString(", "),
+                            listOf(it.cidade, it.estado).filter { s -> s.isNotBlank() }.joinToString("/")
+                        ).filter { s -> s.isNotBlank() }
+                        partes.joinToString(" - ")
+                    }?.takeIf { it.isNotBlank() } ?: "Endereço do comprador"
 
                     viewModel.marcarProntoParaEntrega(
                         venda = venda,
                         pontoOrigemId = ponto.id,
-                        enderecoDestinoTexto = comp?.let { "${it.rua}, ${it.numero} - ${it.cidade}/${it.estado}" } ?: "",
+                        enderecoDestinoTexto = enderecoTexto,
                         destinoLat = coordenadas?.latitude ?: 0.0,
                         destinoLng = coordenadas?.longitude ?: 0.0
                     )
                 }
             },
             onDismiss = { vendaParaMarcarPronta = null }
+        )
+    }
+
+    vendaParaCancelar?.let { venda ->
+        val tituloProduto = venda.produtoTitulo.ifBlank { "Pedido #${venda.id.take(8)}" }
+        AlertDialog(
+            onDismissRequest = { vendaParaCancelar = null },
+            title = { Text("Cancelar compra") },
+            text = {
+                Text("Tem certeza que deseja cancelar a compra de \"$tituloProduto\"? Essa ação não poderá ser desfeita.")
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        viewModel.avancarStatus(
+                            vendaId = venda.id,
+                            novoStatus = StatusEntrega.CANCELADA.name,
+                            perfil = usuario.perfil
+                        )
+                        vendaParaCancelar = null
+                    },
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.error
+                    )
+                ) {
+                    Text("Sim, cancelar")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { vendaParaCancelar = null }) {
+                    Text("Voltar")
+                }
+            }
         )
     }
 }
@@ -266,7 +308,8 @@ private fun VendaCard(
     onVerDetalhes: () -> Unit,
     onAtualizarStatus: (String) -> Unit,
     onRastrearEntrega: (String) -> Unit,
-    onMarcarProntoParaEntrega: () -> Unit
+    onMarcarProntoParaEntrega: () -> Unit,
+    onCancelarCompra: () -> Unit = {}
 ) {
     val ehVendedor = venda.vendedorId == usuario.uid
     val status = venda.statusEntrega
@@ -330,6 +373,23 @@ private fun VendaCard(
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Text("Rastrear Entrega")
+                }
+            }
+
+            if (usuario.perfil == "comprador" && (
+                        status == StatusEntrega.PENDENTE ||
+                                status == StatusEntrega.PRONTO_PARA_ENTREGA
+                        )
+            ) {
+                Spacer(Modifier.height(8.dp))
+                OutlinedButton(
+                    onClick = onCancelarCompra,
+                    colors = ButtonDefaults.outlinedButtonColors(
+                        contentColor = MaterialTheme.colorScheme.error
+                    ),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("Cancelar Compra")
                 }
             }
 

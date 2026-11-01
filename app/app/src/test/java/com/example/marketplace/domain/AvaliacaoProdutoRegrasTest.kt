@@ -16,21 +16,21 @@ class AvaliacaoProdutoRegrasTest {
     }
 
     @Test
-    fun `nao pode avaliar com pedido pendente ou em andamento`() {
+    fun `nao pode avaliar com pedido pendente, em andamento ou cancelado`() {
         listOf(
             StatusEntrega.PENDENTE,
             StatusEntrega.PRONTO_PARA_ENTREGA,
             StatusEntrega.SAIU_PARA_ENTREGA,
-            StatusEntrega.A_CAMINHO
+            StatusEntrega.A_CAMINHO,
+            StatusEntrega.CANCELADA
         ).forEach { status ->
             assertFalse(status.name, AvaliacaoProdutoRegras.podeAvaliar(listOf(pedido(status))))
         }
     }
 
     @Test
-    fun `pode avaliar com pedido entregue ou cancelado`() {
+    fun `pode avaliar apenas com pedido entregue`() {
         assertTrue(AvaliacaoProdutoRegras.podeAvaliar(listOf(pedido(StatusEntrega.ENTREGUE))))
-        assertTrue(AvaliacaoProdutoRegras.podeAvaliar(listOf(pedido(StatusEntrega.CANCELADA))))
     }
 
     @Test

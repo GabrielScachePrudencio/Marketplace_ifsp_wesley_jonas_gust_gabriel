@@ -21,6 +21,7 @@ import com.example.marketplace.controller.VeiculoViewModel
 import com.example.marketplace.controller.VeiculoViewModelFactory
 
 import com.example.marketplace.screen.CadastrarVeiculoScreen
+import com.example.marketplace.screen.EditarPerfilScreen
 import com.example.marketplace.screen.HomeCompradorScreen
 import com.example.marketplace.screen.HomeMotoristaScreen
 import com.example.marketplace.screen.CreateUsuarioScreen
@@ -63,7 +64,9 @@ enum class TelaApp {
 enum class TelaMotorista {
     HOME,
     CADASTRAR_VEICULO,
-    FILA_ENTREGAS
+    FILA_ENTREGAS,
+    RASTREAMENTO_ENTREGA,
+    EDITAR_PERFIL
 }
 
 
@@ -150,6 +153,10 @@ class MainActivity : ComponentActivity() {
 
                                 usuario = usuario,
 
+                                onUsuarioAtualizado = { atualizado ->
+                                    loginViewModel.atualizarUsuarioLogado(atualizado)
+                                },
+
                                 onLogout = onLogout
                             )
                         }
@@ -190,6 +197,13 @@ class MainActivity : ComponentActivity() {
                                 mutableStateOf(
                                     TelaMotorista.HOME
                                 )
+                            }
+
+                            var vendaRastreioId by remember {
+                                mutableStateOf<String?>(null)
+                            }
+                            var telaAnteriorRastreio by remember {
+                                mutableStateOf(TelaMotorista.HOME)
                             }
 
 
@@ -236,6 +250,16 @@ class MainActivity : ComponentActivity() {
 
                                         onFilaEntregas = {
                                             telaMotorista = TelaMotorista.FILA_ENTREGAS
+                                        },
+
+                                        onVerRota = { vendaId ->
+                                            vendaRastreioId = vendaId
+                                            telaAnteriorRastreio = TelaMotorista.HOME
+                                            telaMotorista = TelaMotorista.RASTREAMENTO_ENTREGA
+                                        },
+
+                                        onEditarPerfil = {
+                                            telaMotorista = TelaMotorista.EDITAR_PERFIL
                                         },
 
                                         onLogout = onLogout
@@ -291,6 +315,47 @@ class MainActivity : ComponentActivity() {
                                         usuario = usuario,
                                         onVoltar = {
                                             telaMotorista = TelaMotorista.HOME
+                                        },
+                                        onVerRota = { vendaId ->
+                                            vendaRastreioId = vendaId
+                                            telaAnteriorRastreio = TelaMotorista.FILA_ENTREGAS
+                                            telaMotorista = TelaMotorista.RASTREAMENTO_ENTREGA
+                                        }
+                                    )
+                                }
+
+                                // =====================================
+                                // RASTREAMENTO / ROTA DA ENTREGA
+                                // =====================================
+
+                                TelaMotorista.RASTREAMENTO_ENTREGA -> {
+                                    val vendaId = vendaRastreioId
+                                    if (vendaId != null) {
+                                        RastreamentoEntregaScreen(
+                                            usuario = usuario,
+                                            vendaId = vendaId,
+                                            onVoltar = {
+                                                telaMotorista = telaAnteriorRastreio
+                                            }
+                                        )
+                                    } else {
+                                        telaMotorista = TelaMotorista.HOME
+                                    }
+                                }
+
+                                // =====================================
+                                // EDITAR PERFIL DO MOTORISTA
+                                // =====================================
+
+                                TelaMotorista.EDITAR_PERFIL -> {
+                                    EditarPerfilScreen(
+                                        usuario = usuario,
+                                        onVoltar = {
+                                            telaMotorista = TelaMotorista.HOME
+                                        },
+                                        onPerfilAtualizado = { atualizado ->
+                                            loginViewModel.atualizarUsuarioLogado(atualizado)
+                                            telaMotorista = TelaMotorista.HOME
                                         }
                                     )
                                 }
@@ -305,6 +370,9 @@ class MainActivity : ComponentActivity() {
                         "negociador" -> {
                             HomeNegociadorScreen (
                                 usuario = usuario,
+                                onUsuarioAtualizado = { atualizado ->
+                                    loginViewModel.atualizarUsuarioLogado(atualizado)
+                                },
                                 onLogout = onLogout
                             )
                         }

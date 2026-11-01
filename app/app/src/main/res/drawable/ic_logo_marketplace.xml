@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
+    android:width="120dp"
+    android:height="120dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- Fundo arredondado com gradiente Verde IFSP -->
+    <path android:pathData="M24,6 L84,6 C94,6 102,14 102,24 L102,84 C102,94 94,102 84,102 L24,102 C14,102 6,94 6,84 L6,24 C6,14 14,6 24,6 Z">
+        <aapt:attr name="android:fillColor">
+            <gradient
+                android:startX="6"
+                android:startY="6"
+                android:endX="102"
+                android:endY="102"
+                android:type="linear">
+                <item
+                    android:color="#2E8B47"
+                    android:offset="0.0" />
+                <item
+                    android:color="#115223"
+                    android:offset="1.0" />
+            </gradient>
+        </aapt:attr>
+    </path>
+
+    <!-- Brilho superior sutil -->
+    <path
+        android:fillColor="#18FFFFFF"
+        android:pathData="M24,6 L84,6 C94,6 102,14 102,24 L102,42 C78,52 30,52 6,42 L6,24 C6,14 14,6 24,6 Z" />
+
+    <!-- Alça da sacola -->
+    <path
+        android:fillColor="#00000000"
+        android:pathData="M41,38 C41,28 67,28 67,38"
+        android:strokeWidth="4.8"
+        android:strokeColor="#FFFFFF"
+        android:strokeLineCap="round" />
+
+    <!-- Corpo da sacola de compras -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M32,37 L76,37 C79,37 81.2,39.5 80.8,42.5 L77.2,74 C76.8,77 74.2,79.5 71,79.5 L37,79.5 C33.8,79.5 31.2,77 30.8,74 L27.2,42.5 C26.8,39.5 29,37 32,37 Z" />
+
+    <!-- Pino de localização / entrega no centro da sacola -->
+    <path
+        android:fillColor="#1B7A35"
+        android:pathData="M54,44.5 C47.4,44.5 42,49.9 42,56.5 C42,64.3 54,74 54,74 C54,74 66,64.3 66,56.5 C66,49.9 60.6,44.5 54,44.5 Z" />
+
+    <!-- Centro do pino -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M54,56m-4.5,0a4.5,4.5 0,1 1,9 0a4.5,4.5 0,1 1,-9 0" />
+
+    <!-- Ponto vermelho institucional IFSP -->
+    <path
+        android:fillColor="#D9383A"
+        android:pathData="M71,44.5m-3.6,0a3.6,3.6 0,1 1,7.2 0a3.6,3.6 0,1 1,-7.2 0" />
+
+</vector>

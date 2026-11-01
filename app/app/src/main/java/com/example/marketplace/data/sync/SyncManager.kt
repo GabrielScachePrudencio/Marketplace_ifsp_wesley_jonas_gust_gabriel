@@ -124,6 +124,20 @@ class SyncManager(
                         if (acao == "atualizarFoto") {
                             val fotoPerfil = payload["fotoPerfil"] as? String ?: ""
                             colecao.document(item.id).update("fotoPerfil", fotoPerfil).await()
+                        } else if (acao == "atualizarPerfil") {
+                            val camposAtualizados = mutableMapOf<String, Any?>(
+                                "nome" to (payload["nome"] as? String ?: ""),
+                                "cpf" to (payload["cpf"] as? String ?: ""),
+                                "rua" to (payload["rua"] as? String ?: ""),
+                                "numero" to (payload["numero"] as? String ?: ""),
+                                "cidade" to (payload["cidade"] as? String ?: ""),
+                                "estado" to (payload["estado"] as? String ?: ""),
+                                "cep" to (payload["cep"] as? String ?: ""),
+                                "fotoPerfil" to (payload["fotoPerfil"] as? String ?: ""),
+                                "latitude" to (payload["latitude"] as? Number)?.toDouble(),
+                                "longitude" to (payload["longitude"] as? Number)?.toDouble()
+                            )
+                            colecao.document(item.id).update(camposAtualizados).await()
                         } else if (negocianteId != null) {
                             if (acao == "desvincular") {
                                 colecao.document(motoristaUid).update(

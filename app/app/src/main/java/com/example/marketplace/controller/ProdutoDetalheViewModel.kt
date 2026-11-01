@@ -53,7 +53,7 @@ class ProdutoDetalheViewModel(
     private val _produtoIdAtual = MutableStateFlow<String?>(null)
     private val _usuarioIdAtual = MutableStateFlow<String?>(null)
 
-    /** true quando o usuário tem algum pedido deste produto entregue ou cancelado */
+    /** true quando o usuário tem algum pedido deste produto entregue */
     val podeAvaliar: StateFlow<Boolean> = combine(_produtoIdAtual, _usuarioIdAtual) { produtoId, usuarioId ->
         produtoId to usuarioId
     }

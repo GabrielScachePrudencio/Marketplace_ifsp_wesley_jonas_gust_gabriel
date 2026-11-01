@@ -17,18 +17,34 @@ class LocalizacaoMotoristaTracker(
     private var callback: LocationCallback? = null
     private val scope = CoroutineScope(Dispatchers.IO)
 
-    // Guarda qual venda está sendo rastreada no momento
-    private var vendaIdAtual: String? = null
+    // Guarda as vendas que estão sendo rastreadas no momento
+    private var vendasIdsAtuais: Set<String> = emptySet()
 
     @SuppressLint("MissingPermission")
     fun iniciar(vendaId: String) {
-        // Se já estiver rastreando a mesma venda, não faz nada
-        if (vendaIdAtual == vendaId && callback != null) return
+        iniciar(listOf(vendaId))
+    }
 
-        // Para qualquer rastreamento anterior antes de começar um novo
-        pararSeAtivo()
+    @SuppressLint("MissingPermission")
+    fun iniciar(vendasIds: List<String>) {
+        val novoConjunto = vendasIds.filter { it.isNotBlank() }.toSet()
+        if (novoConjunto.isEmpty()) {
+            pararSeAtivo(limparNoServidor = true)
+            return
+        }
 
-        vendaIdAtual = vendaId
+        // Se já estiver rastreando exatamente as mesmas vendas, não reinicia o GPS
+        if (vendasIdsAtuais == novoConjunto && callback != null) return
+
+        // Limpa no Firestore apenas as vendas que saíram da lista ativa (ex: foram entregues)
+        val removidas = vendasIdsAtuais - novoConjunto
+        removidas.forEach { id ->
+            scope.launch { repository.limparLocalizacao(id) }
+        }
+
+        callback?.let { fusedClient.removeLocationUpdates(it) }
+        callback = null
+        vendasIdsAtuais = novoConjunto
 
         val request = LocationRequest.Builder(
             Priority.PRIORITY_HIGH_ACCURACY,
@@ -38,8 +54,11 @@ class LocalizacaoMotoristaTracker(
         val novoCallback = object : LocationCallback() {
             override fun onLocationResult(result: LocationResult) {
                 val loc = result.lastLocation ?: return
+                val idsParaEnviar = vendasIdsAtuais
                 scope.launch {
-                    repository.enviarLocalizacao(vendaId, loc.latitude, loc.longitude)
+                    idsParaEnviar.forEach { id ->
+                        repository.enviarLocalizacao(id, loc.latitude, loc.longitude)
+                    }
                 }
             }
         }
@@ -48,15 +67,18 @@ class LocalizacaoMotoristaTracker(
         fusedClient.requestLocationUpdates(request, novoCallback, context.mainLooper)
     }
 
-    fun pararSeAtivo() {
+    fun pararSeAtivo(limparNoServidor: Boolean = true) {
         // Remove as atualizações de GPS
         callback?.let { fusedClient.removeLocationUpdates(it) }
         callback = null
 
-        // Se tínhamos uma venda ativa, limpa a localização dela no Firestore
-        vendaIdAtual?.let { id ->
-            scope.launch { repository.limparLocalizacao(id) }
+        // Se solicitado, limpa a localização das vendas ativas no Firestore
+        if (limparNoServidor) {
+            val idsParaLimpar = vendasIdsAtuais
+            idsParaLimpar.forEach { id ->
+                scope.launch { repository.limparLocalizacao(id) }
+            }
         }
-        vendaIdAtual = null
+        vendasIdsAtuais = emptySet()
     }
 }

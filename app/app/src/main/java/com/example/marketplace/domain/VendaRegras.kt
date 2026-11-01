@@ -8,7 +8,7 @@ object VendaRegras {
 
     private val transicoesPermitidas: Map<StatusEntrega, Set<StatusEntrega>> = mapOf(
         StatusEntrega.PENDENTE to setOf(StatusEntrega.PRONTO_PARA_ENTREGA, StatusEntrega.A_CAMINHO, StatusEntrega.CANCELADA),
-        StatusEntrega.PRONTO_PARA_ENTREGA to setOf(StatusEntrega.A_CAMINHO, StatusEntrega.PENDENTE),
+        StatusEntrega.PRONTO_PARA_ENTREGA to setOf(StatusEntrega.A_CAMINHO, StatusEntrega.PENDENTE, StatusEntrega.CANCELADA),
         StatusEntrega.A_CAMINHO to setOf(StatusEntrega.ENTREGUE, StatusEntrega.PRONTO_PARA_ENTREGA),
         StatusEntrega.ENTREGUE to setOf(StatusEntrega.A_CAMINHO)
     )
@@ -65,7 +65,16 @@ object VendaRegras {
                     }
                 }
                 "comprador" -> {
-                    throw IllegalArgumentException("O comprador não tem permissão para alterar o status da entrega.")
+                    require(novoStatus == StatusEntrega.CANCELADA) {
+                        "O comprador só tem permissão para cancelar o pedido."
+                    }
+                    val statusCancelaveisComprador = setOf(
+                        StatusEntrega.PENDENTE,
+                        StatusEntrega.PRONTO_PARA_ENTREGA
+                    )
+                    require(statusAtual in statusCancelaveisComprador) {
+                        "O pedido só pode ser cancelado enquanto ainda não saiu para entrega."
+                    }
                 }
             }
         }

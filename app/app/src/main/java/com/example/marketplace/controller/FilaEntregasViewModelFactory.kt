@@ -4,7 +4,9 @@ import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import com.example.marketplace.data.local.AppDatabase
+import com.example.marketplace.repository.ProdutoRepository
 import com.example.marketplace.repository.RastreioEntregaRepository
+import com.example.marketplace.repository.VendaRepository
 
 class FilaEntregasViewModelFactory(
     private val context: Context
@@ -17,8 +19,18 @@ class FilaEntregasViewModelFactory(
             db.rastreioEntregaDao(),
             db.pendenteSycronizacaoDao()
         )
+        val produtoRepository = ProdutoRepository(
+            db.produtoDao(),
+            db.pendenteSycronizacaoDao()
+        )
+        val vendaRepository = VendaRepository(
+            db.vendaDao(),
+            db.pendenteSycronizacaoDao(),
+            produtoRepository,
+            repository
+        )
 
         @Suppress("UNCHECKED_CAST")
-        return FilaEntregasViewModel(repository) as T
+        return FilaEntregasViewModel(repository, vendaRepository) as T
     }
 }
