@@ -7,12 +7,14 @@ private enum class TelaComprador {
     PRODUTOS,
     DETALHE_PRODUTO,
     MINHAS_VENDAS,
-    RASTREAMENTO_ENTREGA
+    RASTREAMENTO_ENTREGA,
+    EDITAR_PERFIL
 }
 
 @Composable
 fun HomeCompradorScreen(
     usuario: Usuario,
+    onUsuarioAtualizado: (Usuario) -> Unit = {},
     onLogout: () -> Unit
 ) {
     var telaAtual by remember { mutableStateOf(TelaComprador.PRODUTOS) }
@@ -34,6 +36,9 @@ fun HomeCompradorScreen(
                 },
                 onMinhasVendas = {
                     telaAtual = TelaComprador.MINHAS_VENDAS
+                },
+                onEditarPerfil = {
+                    telaAtual = TelaComprador.EDITAR_PERFIL
                 },
                 onLogout = onLogout
             )
@@ -76,6 +81,19 @@ fun HomeCompradorScreen(
                     }
                 )
             }
+        }
+
+        TelaComprador.EDITAR_PERFIL -> {
+            EditarPerfilScreen(
+                usuario = usuario,
+                onVoltar = {
+                    telaAtual = TelaComprador.PRODUTOS
+                },
+                onPerfilAtualizado = { atualizado ->
+                    onUsuarioAtualizado(atualizado)
+                    telaAtual = TelaComprador.PRODUTOS
+                }
+            )
         }
     }
 }

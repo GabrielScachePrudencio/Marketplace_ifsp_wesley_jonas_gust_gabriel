@@ -23,6 +23,7 @@ import androidx.compose.material.icons.automirrored.filled.Logout
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Person
 import androidx.compose.material3.*
 import androidx.compose.material3.MenuAnchorType
 import androidx.compose.runtime.*
@@ -72,6 +73,7 @@ fun HomeMotoristaScreen(
     onCadastrarVeiculo: () -> Unit,
     onFilaEntregas: () -> Unit = {},
     onVerRota: (String) -> Unit = {},
+    onEditarPerfil: () -> Unit = {},
     onLogout: () -> Unit
 ) {
     val context = LocalContext.current
@@ -247,6 +249,14 @@ fun HomeMotoristaScreen(
                         expanded = menuAcoesAberto,
                         onDismissRequest = { menuAcoesAberto = false }
                     ) {
+                        DropdownMenuItem(
+                            text = { Text("Editar meu perfil") },
+                            leadingIcon = { Icon(Icons.Default.Person, contentDescription = null) },
+                            onClick = {
+                                menuAcoesAberto = false
+                                onEditarPerfil()
+                            }
+                        )
                         DropdownMenuItem(
                             text = { Text("Limpar minha fila") },
                             onClick = {

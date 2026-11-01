@@ -348,4 +348,36 @@ class UsuarioRepository(
 
         return sucesso
     }
+
+    suspend fun atualizarPerfil(usuarioAtualizado: Usuario): Usuario {
+        val sucesso = salvarNoFirestore(usuarioAtualizado)
+        usuarioDao.insert(usuarioAtualizado)
+
+        if (!sucesso) {
+            val payload = mapOf(
+                "uid" to usuarioAtualizado.uid,
+                "nome" to usuarioAtualizado.nome,
+                "cpf" to usuarioAtualizado.cpf,
+                "rua" to usuarioAtualizado.rua,
+                "numero" to usuarioAtualizado.numero,
+                "cidade" to usuarioAtualizado.cidade,
+                "estado" to usuarioAtualizado.estado,
+                "cep" to usuarioAtualizado.cep,
+                "fotoPerfil" to usuarioAtualizado.fotoPerfil,
+                "latitude" to usuarioAtualizado.latitude,
+                "longitude" to usuarioAtualizado.longitude,
+                "acao" to "atualizarPerfil"
+            )
+            pendenteSycronizacaoDao.inserir(
+                PendenteSycronizacao(
+                    id = usuarioAtualizado.uid,
+                    tipo = TipoPendenteSyncronizacao.USUARIOS,
+                    operacao = OperacaoPendente.UPDATE,
+                    payloadJson = gson.toJson(payload)
+                )
+            )
+        }
+
+        return usuarioAtualizado
+    }
 }

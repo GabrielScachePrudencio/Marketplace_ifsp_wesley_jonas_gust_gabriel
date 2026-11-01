@@ -76,6 +76,21 @@ class UsuarioViewModel(
             onResultado(ok)
         }
     }
+
+    fun atualizarPerfil(
+        usuarioAtualizado: Usuario,
+        onSucesso: (Usuario) -> Unit,
+        onErro: (String) -> Unit = {}
+    ) {
+        viewModelScope.launch {
+            try {
+                val salvo = repository.atualizarPerfil(usuarioAtualizado)
+                onSucesso(salvo)
+            } catch (e: Exception) {
+                onErro(e.message ?: "Erro ao atualizar perfil")
+            }
+        }
+    }
 }
 
 class UsuarioViewModelFactory(

@@ -21,6 +21,7 @@ import com.example.marketplace.controller.VeiculoViewModel
 import com.example.marketplace.controller.VeiculoViewModelFactory
 
 import com.example.marketplace.screen.CadastrarVeiculoScreen
+import com.example.marketplace.screen.EditarPerfilScreen
 import com.example.marketplace.screen.HomeCompradorScreen
 import com.example.marketplace.screen.HomeMotoristaScreen
 import com.example.marketplace.screen.CreateUsuarioScreen
@@ -64,7 +65,8 @@ enum class TelaMotorista {
     HOME,
     CADASTRAR_VEICULO,
     FILA_ENTREGAS,
-    RASTREAMENTO_ENTREGA
+    RASTREAMENTO_ENTREGA,
+    EDITAR_PERFIL
 }
 
 
@@ -150,6 +152,10 @@ class MainActivity : ComponentActivity() {
                             HomeCompradorScreen(
 
                                 usuario = usuario,
+
+                                onUsuarioAtualizado = { atualizado ->
+                                    loginViewModel.atualizarUsuarioLogado(atualizado)
+                                },
 
                                 onLogout = onLogout
                             )
@@ -252,6 +258,10 @@ class MainActivity : ComponentActivity() {
                                             telaMotorista = TelaMotorista.RASTREAMENTO_ENTREGA
                                         },
 
+                                        onEditarPerfil = {
+                                            telaMotorista = TelaMotorista.EDITAR_PERFIL
+                                        },
+
                                         onLogout = onLogout
                                     )
                                 }
@@ -332,6 +342,23 @@ class MainActivity : ComponentActivity() {
                                         telaMotorista = TelaMotorista.HOME
                                     }
                                 }
+
+                                // =====================================
+                                // EDITAR PERFIL DO MOTORISTA
+                                // =====================================
+
+                                TelaMotorista.EDITAR_PERFIL -> {
+                                    EditarPerfilScreen(
+                                        usuario = usuario,
+                                        onVoltar = {
+                                            telaMotorista = TelaMotorista.HOME
+                                        },
+                                        onPerfilAtualizado = { atualizado ->
+                                            loginViewModel.atualizarUsuarioLogado(atualizado)
+                                            telaMotorista = TelaMotorista.HOME
+                                        }
+                                    )
+                                }
                             }
                         }
 
@@ -343,6 +370,9 @@ class MainActivity : ComponentActivity() {
                         "negociador" -> {
                             HomeNegociadorScreen (
                                 usuario = usuario,
+                                onUsuarioAtualizado = { atualizado ->
+                                    loginViewModel.atualizarUsuarioLogado(atualizado)
+                                },
                                 onLogout = onLogout
                             )
                         }

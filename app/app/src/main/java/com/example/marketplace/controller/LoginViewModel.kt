@@ -95,4 +95,8 @@ class LoginViewModel(
         _uiState.value =
             LoginUiState.Idle
     }
+
+    fun atualizarUsuarioLogado(usuarioAtualizado: Usuario) {
+        _uiState.value = LoginUiState.Sucesso(usuarioAtualizado)
+    }
 }

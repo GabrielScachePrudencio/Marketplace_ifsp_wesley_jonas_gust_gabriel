@@ -10,12 +10,14 @@ private enum class TelaNegociador {
     DETALHE_PRODUTO,
     MINHAS_VENDAS,
     PONTOS_REFERENCIA,
-    CRIAR_EDITAR_PONTO
+    CRIAR_EDITAR_PONTO,
+    EDITAR_PERFIL
 }
 
 @Composable
 fun HomeNegociadorScreen(
     usuario: Usuario,
+    onUsuarioAtualizado: (Usuario) -> Unit = {},
     onLogout: () -> Unit
 ) {
     var telaAtual by remember { mutableStateOf(TelaNegociador.PRODUTOS) }
@@ -39,6 +41,9 @@ fun HomeNegociadorScreen(
                 },
                 onPontosReferencia = {
                     telaAtual = TelaNegociador.PONTOS_REFERENCIA
+                },
+                onEditarPerfil = {
+                    telaAtual = TelaNegociador.EDITAR_PERFIL
                 },
                 onLogout = onLogout
             )
@@ -103,6 +108,19 @@ fun HomeNegociadorScreen(
             MinhasVendasScreen(
                 usuario = usuario,
                 onVoltar = {
+                    telaAtual = TelaNegociador.PRODUTOS
+                }
+            )
+        }
+
+        TelaNegociador.EDITAR_PERFIL -> {
+            EditarPerfilScreen(
+                usuario = usuario,
+                onVoltar = {
+                    telaAtual = TelaNegociador.PRODUTOS
+                },
+                onPerfilAtualizado = { atualizado ->
+                    onUsuarioAtualizado(atualizado)
                     telaAtual = TelaNegociador.PRODUTOS
                 }
             )

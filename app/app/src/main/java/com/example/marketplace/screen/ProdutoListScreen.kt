@@ -1,5 +1,6 @@
 package com.example.marketplace.screen
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.grid.GridCells
@@ -13,6 +14,7 @@ import androidx.compose.material.icons.automirrored.filled.Logout
 import androidx.compose.material.icons.automirrored.filled.ReceiptLong
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Inventory2
+import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Place
 import androidx.compose.material.icons.filled.SearchOff
 import androidx.compose.material.icons.filled.Videocam
@@ -53,6 +55,7 @@ fun ProdutoListScreen(
     onCriarProduto: () -> Unit,
     onMinhasVendas: () -> Unit,
     onPontosReferencia: () -> Unit = {},
+    onEditarPerfil: () -> Unit = {},
     onLogout: () -> Unit
 ) {
     val context = LocalContext.current
@@ -94,17 +97,21 @@ fun ProdutoListScreen(
             val textoMinhasVendas = if (usuario.perfil == "comprador") "Minhas compras" else "Minhas vendas"
             TopAppBar(
                 title = {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.clickable { onEditarPerfil() }
+                    ) {
                         AvatarUsuario(
                             fotoBase64 = usuario.fotoPerfil,
                             nome = usuario.nome,
-                            modifier = Modifier.size(38.dp)
+                            modifier = Modifier.size(38.dp),
+                            onClick = onEditarPerfil
                         )
                         Spacer(Modifier.width(10.dp))
                         Column {
                             Text("MarketPlace IFSP", style = MaterialTheme.typography.titleMedium)
                             Text(
-                                "Olá, ${usuario.nome.substringBefore(" ")}",
+                                "Olá, ${usuario.nome.substringBefore(" ")} • Editar perfil",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -116,6 +123,7 @@ fun ProdutoListScreen(
                         AcaoTopo(Icons.Default.Place, "Pontos de referência", onPontosReferencia)
                     }
                     AcaoTopo(Icons.AutoMirrored.Filled.ReceiptLong, textoMinhasVendas, onMinhasVendas)
+                    AcaoTopo(Icons.Default.Person, "Editar perfil", onEditarPerfil)
                     AcaoTopo(Icons.AutoMirrored.Filled.Logout, "Sair", onLogout)
                 }
             )
