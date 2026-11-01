@@ -61,6 +61,7 @@ fun MinhasVendasScreen(
 
     // NOVO: estado do diálogo de escolha de ponto de origem
     var vendaParaMarcarPronta by remember { mutableStateOf<Venda?>(null) }
+    var vendaParaCancelar by remember { mutableStateOf<Venda?>(null) }
 
     var usuariosRelacionados by remember { mutableStateOf<Map<String, Usuario>>(emptyMap()) }
 
@@ -175,6 +176,9 @@ fun MinhasVendasScreen(
                         },
                         onMarcarProntoParaEntrega = {
                             vendaParaMarcarPronta = venda
+                        },
+                        onCancelarCompra = {
+                            vendaParaCancelar = venda
                         }
                     )
                 }
@@ -237,6 +241,39 @@ fun MinhasVendasScreen(
             onDismiss = { vendaParaMarcarPronta = null }
         )
     }
+
+    vendaParaCancelar?.let { venda ->
+        val tituloProduto = venda.produtoTitulo.ifBlank { "Pedido #${venda.id.take(8)}" }
+        AlertDialog(
+            onDismissRequest = { vendaParaCancelar = null },
+            title = { Text("Cancelar compra") },
+            text = {
+                Text("Tem certeza que deseja cancelar a compra de \"$tituloProduto\"? Essa ação não poderá ser desfeita.")
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        viewModel.avancarStatus(
+                            vendaId = venda.id,
+                            novoStatus = StatusEntrega.CANCELADA.name,
+                            perfil = usuario.perfil
+                        )
+                        vendaParaCancelar = null
+                    },
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.error
+                    )
+                ) {
+                    Text("Sim, cancelar")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { vendaParaCancelar = null }) {
+                    Text("Voltar")
+                }
+            }
+        )
+    }
 }
 
 @Composable
@@ -271,7 +308,8 @@ private fun VendaCard(
     onVerDetalhes: () -> Unit,
     onAtualizarStatus: (String) -> Unit,
     onRastrearEntrega: (String) -> Unit,
-    onMarcarProntoParaEntrega: () -> Unit
+    onMarcarProntoParaEntrega: () -> Unit,
+    onCancelarCompra: () -> Unit = {}
 ) {
     val ehVendedor = venda.vendedorId == usuario.uid
     val status = venda.statusEntrega
@@ -335,6 +373,23 @@ private fun VendaCard(
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Text("Rastrear Entrega")
+                }
+            }
+
+            if (usuario.perfil == "comprador" && (
+                        status == StatusEntrega.PENDENTE ||
+                                status == StatusEntrega.PRONTO_PARA_ENTREGA
+                        )
+            ) {
+                Spacer(Modifier.height(8.dp))
+                OutlinedButton(
+                    onClick = onCancelarCompra,
+                    colors = ButtonDefaults.outlinedButtonColors(
+                        contentColor = MaterialTheme.colorScheme.error
+                    ),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("Cancelar Compra")
                 }
             }
 

@@ -143,6 +143,19 @@ class VendaRepository(
             if (rastreio != null) {
                 rastreioEntregaRepository.finalizarEntrega(rastreio.id, rastreio.ultimaLat, rastreio.ultimaLng)
             }
+        } else if (novoStatus == "CANCELADA") {
+            // Devolve a quantidade ao estoque do produto
+            val produto = produtoRepository.buscarProdutoPorId(venda.produtoId)
+            if (produto != null) {
+                produtoRepository.atualizarProduto(
+                    produto.copy(quantidade = produto.quantidade + venda.quantidade)
+                )
+            }
+            // Se já existia um rastreio preparado para essa entrega, exclui
+            val rastreio = rastreioEntregaRepository.buscarPorVendaIdUmaVez(id)
+            if (rastreio != null) {
+                rastreioEntregaRepository.excluirRastreio(rastreio)
+            }
         }
 
         return atualizada

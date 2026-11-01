@@ -75,9 +75,21 @@ class VendaRegrasTest {
     }
 
     @Test
-    fun comprador_naoPodeAlterarStatus() {
+    fun comprador_podeCancelarEnquantoPendenteOuProntoParaEntrega() {
+        VendaRegras.validarTransicao("PENDENTE", "CANCELADA", "comprador")
+        VendaRegras.validarTransicao("PRONTO_PARA_ENTREGA", "CANCELADA", "comprador")
+    }
+
+    @Test
+    fun comprador_naoPodeCancelarAposSairParaEntregaOuAlterarParaOutrosStatus() {
         assertThrows(IllegalArgumentException::class.java) {
             VendaRegras.validarTransicao("PENDENTE", "PRONTO_PARA_ENTREGA", "comprador")
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            VendaRegras.validarTransicao("A_CAMINHO", "CANCELADA", "comprador")
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            VendaRegras.validarTransicao("ENTREGUE", "CANCELADA", "comprador")
         }
     }
 }
