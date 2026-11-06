@@ -1,5 +1,6 @@
 package com.example.marketplace.screen
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.runtime.*
 import com.example.marketplace.model.Usuario
 
@@ -14,12 +15,32 @@ private enum class TelaComprador {
 @Composable
 fun HomeCompradorScreen(
     usuario: Usuario,
+    vendaIdParaAbrir: String? = null,
+    onNotificacaoConsumida: () -> Unit = {},
     onUsuarioAtualizado: (Usuario) -> Unit = {},
     onLogout: () -> Unit
 ) {
     var telaAtual by remember { mutableStateOf(TelaComprador.PRODUTOS) }
     var produtoSelecionadoId by remember { mutableStateOf<String?>(null) }
     var vendaSelecionadaId by remember { mutableStateOf<String?>(null) }
+
+    LaunchedEffect(vendaIdParaAbrir) {
+        vendaIdParaAbrir?.let { vendaId ->
+            vendaSelecionadaId = vendaId
+            telaAtual = TelaComprador.RASTREAMENTO_ENTREGA
+            onNotificacaoConsumida()
+        }
+    }
+
+    BackHandler(enabled = telaAtual != TelaComprador.PRODUTOS) {
+        telaAtual = when (telaAtual) {
+            TelaComprador.RASTREAMENTO_ENTREGA -> TelaComprador.MINHAS_VENDAS
+            TelaComprador.DETALHE_PRODUTO,
+            TelaComprador.MINHAS_VENDAS,
+            TelaComprador.EDITAR_PERFIL -> TelaComprador.PRODUTOS
+            TelaComprador.PRODUTOS -> TelaComprador.PRODUTOS
+        }
+    }
 
     when (telaAtual) {
 

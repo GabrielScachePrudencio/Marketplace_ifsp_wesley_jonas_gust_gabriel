@@ -2,4 +2,5 @@
 <paths>
     <!-- Fotos e vídeos capturados pela câmera e vídeos baixados para reprodução -->
     <cache-path name="midia" path="midia/" />
+    <cache-path name="comprovantes" path="comprovantes/" />
 </paths>

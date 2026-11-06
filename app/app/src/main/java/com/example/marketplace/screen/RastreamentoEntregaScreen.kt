@@ -1,6 +1,11 @@
 package com.example.marketplace.screen
 
+import android.content.Intent
+import android.net.Uri
 import android.content.pm.PackageManager
+import android.location.Location
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -18,7 +23,11 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
+import androidx.core.content.FileProvider
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.google.android.gms.location.LocationServices
+import com.google.android.gms.location.Priority
+import com.google.android.gms.tasks.CancellationTokenSource
 import com.example.marketplace.controller.RastreamentoEntregaUiState
 import com.example.marketplace.controller.RastreamentoEntregaViewModel
 import com.example.marketplace.controller.RastreamentoEntregaViewModelFactory
@@ -26,12 +35,16 @@ import com.example.marketplace.model.LocalizacaoMotoristaTracker
 import com.example.marketplace.model.Usuario
 import com.example.marketplace.model.enums.StatusEntrega
 import com.example.marketplace.service.GeocodingService
+import com.example.marketplace.service.LocationTrackingService
 import com.example.marketplace.service.PontoRota
 import com.example.marketplace.service.Rota
 import com.example.marketplace.service.RoteamentoService
 import com.example.marketplace.util.MapaRastreamento
 import com.example.marketplace.util.MarcadorMapa
 import com.example.marketplace.util.TipoMarcador
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.tasks.await
+import java.io.File
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -57,7 +70,72 @@ fun RastreamentoEntregaScreen(
 
     val uiState by viewModel.uiState.collectAsState()
     val localizacaoMotorista by viewModel.localizacaoMotorista.collectAsState()
+    val comprovante by viewModel.comprovante.collectAsState()
+    val entregaEmAndamento by viewModel.entregaEmAndamento.collectAsState()
+    val mensagemEntrega by viewModel.mensagemEntrega.collectAsState()
     val ehMotorista = usuario.perfil == "motorista"
+    val scope = rememberCoroutineScope()
+    var temPermissaoLocalizacao by remember {
+        mutableStateOf(
+            ContextCompat.checkSelfPermission(
+                context,
+                android.Manifest.permission.ACCESS_FINE_LOCATION
+            ) == PackageManager.PERMISSION_GRANTED
+        )
+    }
+    var erroCaptura by remember { mutableStateOf<String?>(null) }
+    var fotoPendente by remember { mutableStateOf<Uri?>(null) }
+
+    val permissaoLocalizacaoLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { concedida ->
+        temPermissaoLocalizacao = concedida
+        if (!concedida) erroCaptura = "A permissão de localização é necessária para registrar o local da entrega."
+    }
+    val cameraLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.TakePicture()
+    ) { fotoCapturada ->
+        val uri = fotoPendente
+        fotoPendente = null
+        if (!fotoCapturada || uri == null) {
+            erroCaptura = if (fotoCapturada) "A foto não pôde ser lida." else null
+            return@rememberLauncherForActivityResult
+        }
+
+        val vendaAtual = (uiState as? RastreamentoEntregaUiState.Carregado)?.venda
+        if (vendaAtual == null) {
+            erroCaptura = "Não foi possível associar a foto ao pedido."
+            return@rememberLauncherForActivityResult
+        }
+        erroCaptura = "Buscando a localização da foto..."
+        scope.launch {
+            try {
+                val localizacaoAtual = LocationServices.getFusedLocationProviderClient(context)
+                    .getCurrentLocation(
+                        Priority.PRIORITY_HIGH_ACCURACY,
+                        CancellationTokenSource().token
+                    ).await()
+                val coordenadas = localizacaoAtual?.let { it.latitude to it.longitude }
+                    ?: localizacaoMotorista?.takeIf {
+                        System.currentTimeMillis() - it.timestamp < 60_000L
+                    }?.let { it.latitude to it.longitude }
+                if (coordenadas == null) {
+                    erroCaptura = "Não foi possível obter a localização atual. Tente novamente em um local com GPS."
+                } else {
+                    erroCaptura = null
+                    viewModel.confirmarEntrega(
+                        vendaId = vendaAtual.id,
+                        motoristaId = usuario.uid,
+                        fotoUri = uri,
+                        latitude = coordenadas.first,
+                        longitude = coordenadas.second
+                    )
+                }
+            } catch (e: Exception) {
+                erroCaptura = e.message ?: "Não foi possível obter a localização da foto."
+            }
+        }
+    }
 
     Scaffold(
         topBar = {
@@ -96,6 +174,35 @@ fun RastreamentoEntregaScreen(
                     val pontoOrigem = estado.pontoOrigem
                     val comprador = estado.comprador
                     val usuarioDestino = if (ehMotorista) comprador else (comprador ?: usuario)
+                    LaunchedEffect(venda.id, venda.status) {
+                        if (ehMotorista) {
+                            val entregaAtiva = venda.statusEntrega == StatusEntrega.A_CAMINHO ||
+                                venda.statusEntrega == StatusEntrega.SAIU_PARA_ENTREGA
+                            if (
+                                venda.motoristaId == usuario.uid &&
+                                entregaAtiva &&
+                                temPermissaoLocalizacao
+                            ) {
+                                androidx.core.content.ContextCompat.startForegroundService(
+                                    context,
+                                    Intent(context, LocationTrackingService::class.java).apply {
+                                        action = LocationTrackingService.ACTION_START_TRACKING
+                                        putExtra(LocationTrackingService.EXTRA_VENDA_ID, venda.id)
+                                    }
+                                )
+                            } else if (
+                                venda.statusEntrega == StatusEntrega.ENTREGUE ||
+                                !entregaAtiva ||
+                                venda.motoristaId != usuario.uid
+                            ) {
+                                context.stopService(
+                                    Intent(context, LocationTrackingService::class.java).apply {
+                                        action = LocationTrackingService.ACTION_STOP_TRACKING
+                                    }
+                                )
+                            }
+                        }
+                    }
 
                     // O motorista só aparece se o status for A_CAMINHO ou SAIU_PARA_ENTREGA.
                     val mostrarMotorista = venda.statusEntrega == StatusEntrega.A_CAMINHO ||
@@ -117,6 +224,7 @@ fun RastreamentoEntregaScreen(
                                 tracker.pararSeAtivo(limparNoServidor = false)
                             }
                         }
+
                         DisposableEffect(Unit) {
                             onDispose { tracker.pararSeAtivo(limparNoServidor = false) }
                         }
@@ -161,6 +269,18 @@ fun RastreamentoEntregaScreen(
                     var rota by remember { mutableStateOf<Rota?>(null) }
                     var ultimoPontoCalculado by remember { mutableStateOf<PontoRota?>(null) }
                     var ultimoModoMotorista by remember { mutableStateOf<Boolean?>(null) }
+                    var ruaMotorista by remember(venda.id) { mutableStateOf("") }
+                    var ultimaBuscaRuaEm by remember(venda.id) { mutableStateOf(0L) }
+
+                    LaunchedEffect(localizacaoMotorista?.timestamp) {
+                        val localizacao = localizacaoMotorista ?: return@LaunchedEffect
+                        if (localizacao.timestamp - ultimaBuscaRuaEm < 30_000L) return@LaunchedEffect
+                        ultimaBuscaRuaEm = localizacao.timestamp
+                        ruaMotorista = GeocodingService.buscarRuaPorCoordenadas(
+                            localizacao.latitude,
+                            localizacao.longitude
+                        ).orEmpty()
+                    }
 
                     LaunchedEffect(mostrarMotorista, localizacaoMotorista, pontoOrigem, destinoLat, destinoLng) {
                         if (destinoLat == 0.0 || destinoLng == 0.0) return@LaunchedEffect
@@ -291,14 +411,136 @@ fun RastreamentoEntregaScreen(
                                     MarcadorMapa(
                                         latitude = it.latitude,
                                         longitude = it.longitude,
-                                        titulo = "Motorista",
+                                        titulo = if (ruaMotorista.isNotBlank()) {
+                                            "Motorista · $ruaMotorista"
+                                        } else "Motorista",
                                         tipo = TipoMarcador.MOTORISTA
                                     )
                                 }
                             } else null,
-                            rota = rota
+                            rota = rota,
+                            cercaVirtual = if (destinoLat != 0.0 && destinoLng != 0.0) {
+                                MarcadorMapa(
+                                    latitude = destinoLat,
+                                    longitude = destinoLng,
+                                    titulo = "Cerca virtual · 187 m",
+                                    tipo = TipoMarcador.DESTINO
+                                )
+                            } else null
                         )
                     }
+
+                    if (mostrarMotorista) {
+                        Card(
+                            modifier = Modifier.fillMaxWidth(),
+                            colors = CardDefaults.cardColors(
+                                containerColor = MaterialTheme.colorScheme.secondaryContainer
+                            )
+                        ) {
+                            Column(
+                                modifier = Modifier.padding(16.dp),
+                                verticalArrangement = Arrangement.spacedBy(4.dp)
+                            ) {
+                                Text(
+                                    "Rua atual do motorista",
+                                    style = MaterialTheme.typography.labelLarge,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                Text(
+                                    when {
+                                        localizacaoMotorista == null -> "Aguardando localização do motorista..."
+                                        ruaMotorista.isBlank() -> "Buscando nome da rua..."
+                                        else -> ruaMotorista
+                                    },
+                                    style = MaterialTheme.typography.titleMedium
+                                )
+                                if (rota?.etapas?.isNotEmpty() == true) {
+                                    val etapas = rota!!.etapas
+                                    val etapaAtual = localizacaoMotorista?.let {
+                                        encontrarEtapaAtual(rota!!, it.latitude, it.longitude)
+                                    }
+                                    HorizontalDivider()
+                                    Text("Percurso de ruas", style = MaterialTheme.typography.titleSmall)
+                                    etapas.forEachIndexed { index, etapa ->
+                                        val atual = index == etapaAtual
+                                        val concluida = etapaAtual != null && index < etapaAtual
+                                        Text(
+                                            text = when {
+                                                atual -> "●  ${etapa.nomeRua} — motorista aqui"
+                                                concluida -> "✓  ${etapa.nomeRua}"
+                                                else -> "○  ${etapa.nomeRua}"
+                                            },
+                                            style = if (atual) MaterialTheme.typography.bodyMedium
+                                            else MaterialTheme.typography.bodySmall,
+                                            color = if (atual) MaterialTheme.colorScheme.primary
+                                            else MaterialTheme.colorScheme.onSurfaceVariant,
+                                            fontWeight = if (atual) FontWeight.Bold else FontWeight.Normal
+                                        )
+                                    }
+                                } else if (rota != null) {
+                                    Text(
+                                        "Não foi possível obter os nomes das ruas deste percurso.",
+                                        style = MaterialTheme.typography.bodySmall
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    if (ehMotorista && venda.motoristaId == usuario.uid &&
+                        mostrarMotorista && rastreio != null
+                    ) {
+                        Button(
+                            onClick = {
+                                erroCaptura = null
+                                if (!temPermissaoLocalizacao) {
+                                    permissaoLocalizacaoLauncher.launch(
+                                        android.Manifest.permission.ACCESS_FINE_LOCATION
+                                    )
+                                    return@Button
+                                }
+                                val pastaFotos = File(context.cacheDir, "comprovantes")
+                                if (!pastaFotos.exists() && !pastaFotos.mkdirs()) {
+                                    erroCaptura = "Não foi possível preparar o arquivo da foto."
+                                    return@Button
+                                }
+                                try {
+                                    val arquivo = File.createTempFile("entrega_${venda.id}_", ".jpg", pastaFotos)
+                                    val uri = FileProvider.getUriForFile(
+                                        context,
+                                        "${context.packageName}.fileprovider",
+                                        arquivo
+                                    )
+                                    fotoPendente = uri
+                                    cameraLauncher.launch(uri)
+                                } catch (e: Exception) {
+                                    erroCaptura = e.message ?: "Não foi possível abrir a câmera."
+                                }
+                            },
+                            enabled = !entregaEmAndamento,
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            if (entregaEmAndamento) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(18.dp),
+                                    strokeWidth = 2.dp
+                                )
+                                Spacer(Modifier.width(8.dp))
+                                Text("Enviando comprovante...")
+                            } else {
+                                Text("Tirar foto e confirmar entrega")
+                            }
+                        }
+                        (erroCaptura ?: mensagemEntrega)?.let { mensagem ->
+                            Text(
+                                mensagem,
+                                color = MaterialTheme.colorScheme.error,
+                                style = MaterialTheme.typography.bodySmall
+                            )
+                        }
+                    }
+
+                    comprovante?.let { ComprovanteEntregaCard(it) }
 
                     // ================== LEGENDA DINÂMICA ==================
                     Row(
@@ -582,5 +824,21 @@ fun RastreamentoEntregaScreen(
                 else -> {}
             }
         }
+    }
+}
+
+private fun encontrarEtapaAtual(rota: Rota, latitude: Double, longitude: Double): Int? {
+    return rota.etapas.indices.minByOrNull { indice ->
+        rota.etapas[indice].pontos.minOfOrNull { ponto ->
+            val distancia = FloatArray(1)
+            Location.distanceBetween(
+                latitude,
+                longitude,
+                ponto.latitude,
+                ponto.longitude,
+                distancia
+            )
+            distancia[0]
+        } ?: Float.MAX_VALUE
     }
 }

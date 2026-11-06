@@ -27,6 +27,7 @@ import org.osmdroid.util.BoundingBox
 import org.osmdroid.util.GeoPoint
 import org.osmdroid.views.MapView
 import org.osmdroid.views.overlay.Marker
+import org.osmdroid.views.overlay.Polygon
 import org.osmdroid.views.overlay.Polyline
 
 enum class TipoMarcador { ORIGEM, DESTINO, MOTORISTA }
@@ -53,6 +54,8 @@ fun MapaRastreamento(
     motorista: MarcadorMapa?,
     modifier: Modifier = Modifier,
     rota: Rota? = null,
+    cercaVirtual: MarcadorMapa? = null,
+    raioCercaMetros: Double = 187.0,
     corRota: Int = 0xFF1A73E8.toInt()
 ) {
     val context = LocalContext.current
@@ -100,9 +103,24 @@ fun MapaRastreamento(
         }
     }
 
-    LaunchedEffect(origem, destino, motorista, rota, pedidoManual) {
+    LaunchedEffect(origem, destino, motorista, rota, cercaVirtual, raioCercaMetros, pedidoManual) {
         // ---------- 1) Desenha overlays (isso NÃO mexe no zoom/posição) ----------
         mapView.overlays.clear()
+
+        val pontoCerca = cercaVirtual?.let {
+            if (it.latitude != 0.0 || it.longitude != 0.0) GeoPoint(it.latitude, it.longitude) else null
+        }
+        if (pontoCerca != null && raioCercaMetros > 0) {
+            mapView.overlays.add(
+                Polygon().apply {
+                    points = Polygon.pointsAsCircle(pontoCerca, raioCercaMetros)
+                    fillPaint.color = android.graphics.Color.argb(45, 255, 87, 34)
+                    outlinePaint.color = android.graphics.Color.rgb(230, 81, 0)
+                    outlinePaint.strokeWidth = 3f
+                    title = "Cerca virtual · ${raioCercaMetros.toInt()} m"
+                }
+            )
+        }
 
         val pontosRota = rota?.pontos?.map { GeoPoint(it.latitude, it.longitude) }.orEmpty()
         if (pontosRota.size >= 2) {
@@ -123,13 +141,16 @@ fun MapaRastreamento(
 
         fun adicionar(marcador: MarcadorMapa?, emoji: String): GeoPoint? {
             val p = ponto(marcador) ?: return null
-            mapView.overlays.add(
-                Marker(mapView).apply {
-                    position = p
-                    setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
-                    title = "$emoji ${marcador!!.titulo}"
+            val marker = Marker(mapView).apply {
+                position = p
+                setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
+                title = "$emoji ${marcador!!.titulo}"
+                setOnMarkerClickListener { selecionado, _ ->
+                    selecionado.showInfoWindow()
+                    true
                 }
-            )
+            }
+            mapView.overlays.add(marker)
             return p
         }
 

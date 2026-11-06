@@ -1,5 +1,6 @@
 package com.example.marketplace.screen
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.runtime.*
 import com.example.marketplace.model.PontoReferencia
 import com.example.marketplace.model.Usuario
@@ -9,6 +10,7 @@ private enum class TelaNegociador {
     CRIAR_PRODUTO,
     DETALHE_PRODUTO,
     MINHAS_VENDAS,
+    RASTREAMENTO_ENTREGA,
     PONTOS_REFERENCIA,
     CRIAR_EDITAR_PONTO,
     EDITAR_PERFIL
@@ -17,12 +19,36 @@ private enum class TelaNegociador {
 @Composable
 fun HomeNegociadorScreen(
     usuario: Usuario,
+    vendaIdParaAbrir: String? = null,
+    onNotificacaoConsumida: () -> Unit = {},
     onUsuarioAtualizado: (Usuario) -> Unit = {},
     onLogout: () -> Unit
 ) {
     var telaAtual by remember { mutableStateOf(TelaNegociador.PRODUTOS) }
     var produtoSelecionadoId by remember { mutableStateOf<String?>(null) }
     var pontoSelecionado by remember { mutableStateOf<PontoReferencia?>(null) }
+    var vendaRastreioId by remember { mutableStateOf<String?>(null) }
+
+    LaunchedEffect(vendaIdParaAbrir) {
+        vendaIdParaAbrir?.let { vendaId ->
+            vendaRastreioId = vendaId
+            telaAtual = TelaNegociador.RASTREAMENTO_ENTREGA
+            onNotificacaoConsumida()
+        }
+    }
+
+    BackHandler(enabled = telaAtual != TelaNegociador.PRODUTOS) {
+        telaAtual = when (telaAtual) {
+            TelaNegociador.RASTREAMENTO_ENTREGA -> TelaNegociador.MINHAS_VENDAS
+            TelaNegociador.CRIAR_EDITAR_PONTO -> TelaNegociador.PONTOS_REFERENCIA
+            TelaNegociador.CRIAR_PRODUTO,
+            TelaNegociador.DETALHE_PRODUTO,
+            TelaNegociador.MINHAS_VENDAS,
+            TelaNegociador.PONTOS_REFERENCIA,
+            TelaNegociador.EDITAR_PERFIL -> TelaNegociador.PRODUTOS
+            TelaNegociador.PRODUTOS -> TelaNegociador.PRODUTOS
+        }
+    }
 
     when (telaAtual) {
 
@@ -109,8 +135,23 @@ fun HomeNegociadorScreen(
                 usuario = usuario,
                 onVoltar = {
                     telaAtual = TelaNegociador.PRODUTOS
+                },
+                onRastrearEntrega = { vendaId ->
+                    vendaRastreioId = vendaId
+                    telaAtual = TelaNegociador.RASTREAMENTO_ENTREGA
                 }
             )
+        }
+
+        TelaNegociador.RASTREAMENTO_ENTREGA -> {
+            val vendaId = vendaRastreioId
+            if (vendaId != null) {
+                RastreamentoEntregaScreen(
+                    usuario = usuario,
+                    vendaId = vendaId,
+                    onVoltar = { telaAtual = TelaNegociador.MINHAS_VENDAS }
+                )
+            }
         }
 
         TelaNegociador.EDITAR_PERFIL -> {

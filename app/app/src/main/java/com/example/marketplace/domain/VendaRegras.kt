@@ -9,6 +9,7 @@ object VendaRegras {
     private val transicoesPermitidas: Map<StatusEntrega, Set<StatusEntrega>> = mapOf(
         StatusEntrega.PENDENTE to setOf(StatusEntrega.PRONTO_PARA_ENTREGA, StatusEntrega.A_CAMINHO, StatusEntrega.CANCELADA),
         StatusEntrega.PRONTO_PARA_ENTREGA to setOf(StatusEntrega.A_CAMINHO, StatusEntrega.PENDENTE, StatusEntrega.CANCELADA),
+        StatusEntrega.SAIU_PARA_ENTREGA to setOf(StatusEntrega.ENTREGUE, StatusEntrega.PRONTO_PARA_ENTREGA),
         StatusEntrega.A_CAMINHO to setOf(StatusEntrega.ENTREGUE, StatusEntrega.PRONTO_PARA_ENTREGA),
         StatusEntrega.ENTREGUE to setOf(StatusEntrega.A_CAMINHO)
     )

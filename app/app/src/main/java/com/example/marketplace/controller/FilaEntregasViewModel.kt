@@ -87,36 +87,6 @@ class FilaEntregasViewModel(
             }
         }
     }
-
-
-    fun finalizarEntrega(rastreioId: String, ultimaLat: Double?, ultimaLng: Double?, onSucesso: () -> Unit = {}) {
-        viewModelScope.launch {
-            _uiState.value = FilaEntregasUiState.Loading
-            try {
-                val rastreio = _fila.value.find { it.id == rastreioId } ?: repository.buscarPorId(rastreioId)
-                repository.finalizarEntrega(rastreioId, ultimaLat, ultimaLng)
-                if (rastreio != null && rastreio.vendaId.isNotBlank()) {
-                    try {
-                        vendaRepository?.atualizarStatusVenda(
-                            id = rastreio.vendaId,
-                            novoStatus = "ENTREGUE",
-                            perfil = "motorista",
-                            motoristaId = rastreio.motoristaId
-                        )
-                    } catch (_: Exception) {}
-                }
-
-                // AQUI: remove o item da fila imediatamente
-                _fila.value = _fila.value.filter { it.id != rastreioId }
-
-                _uiState.value = FilaEntregasUiState.Sucesso("Entrega finalizada")
-                onSucesso()
-            } catch (e: Exception) {
-                _uiState.value = FilaEntregasUiState.Erro(e.message ?: "Erro ao finalizar entrega")
-            }
-        }
-    }
-
     fun limparFila(motoristaId: String, onSucesso: () -> Unit = {}) {
         if (motoristaId.isBlank()) return
 
