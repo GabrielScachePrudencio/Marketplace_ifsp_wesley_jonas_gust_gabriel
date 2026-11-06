@@ -49,6 +49,9 @@ class VendaRegrasTest {
         // A_CAMINHO -> ENTREGUE (concluir entrega)
         VendaRegras.validarTransicao("A_CAMINHO", "ENTREGUE", "motorista")
 
+        // SAIU_PARA_ENTREGA -> ENTREGUE (concluir entrega iniciada pela tela da fila)
+        VendaRegras.validarTransicao("SAIU_PARA_ENTREGA", "ENTREGUE", "motorista")
+
         // ENTREGUE -> A_CAMINHO (regressão: desfazer entrega)
         VendaRegras.validarTransicao("ENTREGUE", "A_CAMINHO", "motorista", veiculoId = "veiculo-1")
 

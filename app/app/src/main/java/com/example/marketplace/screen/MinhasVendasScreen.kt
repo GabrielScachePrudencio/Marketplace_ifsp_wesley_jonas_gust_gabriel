@@ -361,18 +361,24 @@ private fun VendaCard(
                 Text("Ver mais informações")
             }
 
-            if (usuario.perfil == "comprador" && (
-                        status == StatusEntrega.PRONTO_PARA_ENTREGA ||
-                                status == StatusEntrega.SAIU_PARA_ENTREGA ||
-                                status == StatusEntrega.A_CAMINHO
-                        )
-            ) {
+            val podeAbrirRastreamento =
+                (usuario.perfil == "comprador" && status in setOf(
+                    StatusEntrega.PRONTO_PARA_ENTREGA,
+                    StatusEntrega.SAIU_PARA_ENTREGA,
+                    StatusEntrega.A_CAMINHO,
+                    StatusEntrega.ENTREGUE
+                )) ||
+                        (ehVendedor && usuario.perfil == "negociador" && status == StatusEntrega.ENTREGUE)
+            if (podeAbrirRastreamento) {
                 Spacer(Modifier.height(8.dp))
                 Button(
                     onClick = { onRastrearEntrega(venda.id) },
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    Text("Rastrear Entrega")
+                    Text(
+                        if (status == StatusEntrega.ENTREGUE) "Ver comprovante de entrega"
+                        else "Rastrear Entrega"
+                    )
                 }
             }
 

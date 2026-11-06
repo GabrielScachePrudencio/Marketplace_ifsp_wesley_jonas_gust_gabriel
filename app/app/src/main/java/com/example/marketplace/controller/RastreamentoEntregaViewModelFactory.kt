@@ -6,6 +6,7 @@ import androidx.lifecycle.ViewModelProvider
 import com.example.marketplace.data.local.AppDatabase
 import com.example.marketplace.repository.PontoReferenciaRepository
 import com.example.marketplace.repository.RastreioEntregaRepository
+import com.example.marketplace.repository.ComprovanteEntregaRepository
 import com.example.marketplace.repository.UsuarioRepository
 import com.example.marketplace.repository.VendaRepository
 
@@ -43,7 +44,8 @@ class RastreamentoEntregaViewModelFactory(
             vendaRepository,
             rastreioEntregaRepository,
             pontoReferenciaRepository,
-            usuarioRepository
+            usuarioRepository,
+            ComprovanteEntregaRepository(context)
         ) as T
     }
 }

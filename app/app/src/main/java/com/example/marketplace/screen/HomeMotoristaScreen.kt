@@ -1014,11 +1014,11 @@ private fun MotoristaEntregaCard(
 
                         Button(
                             onClick = {
-                                onAtualizarStatus(StatusEntrega.ENTREGUE.name, venda.veiculoId)
+                                onVerRota()
                             },
                             modifier = Modifier.fillMaxWidth()
                         ) {
-                            Text("Confirmar Entrega ao Cliente")
+                            Text("Tirar foto e confirmar entrega")
                         }
 
                         OutlinedButton(
@@ -1044,11 +1044,11 @@ private fun MotoristaEntregaCard(
 
                         Button(
                             onClick = {
-                                onAtualizarStatus(StatusEntrega.ENTREGUE.name, venda.veiculoId)
+                                onVerRota()
                             },
                             modifier = Modifier.fillMaxWidth()
                         ) {
-                            Text("Confirmar Entrega ao Cliente")
+                            Text("Tirar foto e confirmar entrega")
                         }
 
                         OutlinedButton(

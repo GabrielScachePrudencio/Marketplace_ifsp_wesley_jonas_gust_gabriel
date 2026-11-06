@@ -136,16 +136,7 @@ fun FilaEntregasMotoristaScreen(
                                 }
                             },
                             onFinalizar = {
-                                viewModel.finalizarEntrega(rastreio.id, rastreio.ultimaLat, rastreio.ultimaLng) {
-                                    // Para o serviço de rastreamento
-                                    val serviceIntent = Intent(context, LocationTrackingService::class.java).apply {
-                                        action = LocationTrackingService.ACTION_STOP_TRACKING
-                                    }
-                                    context.stopService(serviceIntent)
-
-                                    // NOVO: Recarrega a fila para remover o item finalizado
-                                    viewModel.carregarFilaDoMotorista(usuario.uid)
-                                }
+                                if (rastreio.vendaId.isNotBlank()) onVerRota(rastreio.vendaId)
                             }
                         )
                     }

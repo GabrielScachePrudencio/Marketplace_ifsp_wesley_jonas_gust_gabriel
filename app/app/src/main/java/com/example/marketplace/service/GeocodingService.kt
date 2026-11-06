@@ -75,6 +75,23 @@ object GeocodingService {
         }
     }
 
+    suspend fun buscarRuaPorCoordenadas(latitude: Double, longitude: Double): String? =
+        withContext(Dispatchers.IO) {
+            try {
+                val url = "https://api.geoapify.com/v1/geocode/reverse" +
+                        "?lat=$latitude&lon=$longitude&format=json&apiKey=$API_KEY"
+                client.newCall(Request.Builder().url(url).build()).execute().use { response ->
+                    if (!response.isSuccessful) return@withContext null
+                    val resultados = JSONObject(response.body?.string().orEmpty()).optJSONArray("results")
+                    val resultado = resultados?.optJSONObject(0) ?: return@withContext null
+                    resultado.optString("street").takeIf { it.isNotBlank() }
+                }
+            } catch (e: Exception) {
+                android.util.Log.e("Geocoding", "Falha ao buscar rua da localização.", e)
+                null
+            }
+        }
+
     /** Preenche rua/cidade/estado a partir do CEP (ViaCEP, gratuito e sem chave). */
     suspend fun buscarEnderecoPorCep(cep: String): EnderecoCep? = withContext(Dispatchers.IO) {
         try {

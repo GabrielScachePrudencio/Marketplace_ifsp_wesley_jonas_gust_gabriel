@@ -3,6 +3,7 @@ package com.example.marketplace
 import android.os.Bundle
 import android.widget.Toast
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.compose.runtime.*
 import androidx.compose.ui.platform.LocalContext
@@ -33,6 +34,8 @@ import com.example.marketplace.screen.ProdutoDetalheScreen
 import com.example.marketplace.screen.ProdutoListScreen
 import com.example.marketplace.screen.FilaEntregasMotoristaScreen
 import com.example.marketplace.screen.RastreamentoEntregaScreen
+import com.example.marketplace.service.EntregaMessagingService
+import com.example.marketplace.service.RegistroNotificacoesEntrega
 
 
 // ============================================================
@@ -71,16 +74,19 @@ enum class TelaMotorista {
 
 
 class MainActivity : ComponentActivity() {
+    private val vendaIdDaNotificacao = mutableStateOf<String?>(null)
 
     override fun onCreate(savedInstanceState: Bundle?) {
 
         super.onCreate(savedInstanceState)
+        vendaIdDaNotificacao.value = intent?.getStringExtra(EntregaMessagingService.EXTRA_VENDA_ID)
 
         setContent {
             MarketPlaceTheme {
             Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
 
             val context = LocalContext.current
+            val vendaIdNotificacao by vendaIdDaNotificacao
 
             // ====================================================
             // LOGIN VIEWMODEL
@@ -115,6 +121,7 @@ class MainActivity : ComponentActivity() {
 
                     val usuario =
                         (uiState as LoginUiState.Sucesso).usuario
+                    RegistroNotificacoesEntrega(uid = usuario.uid)
 
 
                     // =================================================
@@ -152,6 +159,8 @@ class MainActivity : ComponentActivity() {
                             HomeCompradorScreen(
 
                                 usuario = usuario,
+                                vendaIdParaAbrir = vendaIdNotificacao,
+                                onNotificacaoConsumida = { vendaIdDaNotificacao.value = null },
 
                                 onUsuarioAtualizado = { atualizado ->
                                     loginViewModel.atualizarUsuarioLogado(atualizado)
@@ -204,6 +213,16 @@ class MainActivity : ComponentActivity() {
                             }
                             var telaAnteriorRastreio by remember {
                                 mutableStateOf(TelaMotorista.HOME)
+                            }
+
+                            BackHandler(enabled = telaMotorista != TelaMotorista.HOME) {
+                                telaMotorista = when (telaMotorista) {
+                                    TelaMotorista.RASTREAMENTO_ENTREGA -> telaAnteriorRastreio
+                                    TelaMotorista.HOME -> TelaMotorista.HOME
+                                    TelaMotorista.CADASTRAR_VEICULO,
+                                    TelaMotorista.FILA_ENTREGAS,
+                                    TelaMotorista.EDITAR_PERFIL -> TelaMotorista.HOME
+                                }
                             }
 
 
@@ -370,6 +389,8 @@ class MainActivity : ComponentActivity() {
                         "negociador" -> {
                             HomeNegociadorScreen (
                                 usuario = usuario,
+                                vendaIdParaAbrir = vendaIdNotificacao,
+                                onNotificacaoConsumida = { vendaIdDaNotificacao.value = null },
                                 onUsuarioAtualizado = { atualizado ->
                                     loginViewModel.atualizarUsuarioLogado(atualizado)
                                 },
@@ -391,6 +412,7 @@ class MainActivity : ComponentActivity() {
 
                             loginViewModel.logout()
                         }
+
                     }
                 }
 
@@ -461,11 +483,19 @@ class MainActivity : ComponentActivity() {
                             )
                         }
                     }
+
                 }
             }
             }
             }
         }
+    }
+
+    override fun onNewIntent(intent: android.content.Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        vendaIdDaNotificacao.value =
+            intent.getStringExtra(EntregaMessagingService.EXTRA_VENDA_ID)
     }
 }
 

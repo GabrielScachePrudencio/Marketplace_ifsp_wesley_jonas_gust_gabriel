@@ -8,10 +8,16 @@ import java.net.URL
 
 data class PontoRota(val latitude: Double, val longitude: Double)
 
+data class EtapaRota(
+    val nomeRua: String,
+    val pontos: List<PontoRota>
+)
+
 data class Rota(
     val pontos: List<PontoRota>,
     val distanciaMetros: Double,
-    val duracaoSegundos: Double
+    val duracaoSegundos: Double,
+    val etapas: List<EtapaRota> = emptyList()
 ) {
     val distanciaTexto: String
         get() = if (distanciaMetros >= 1000) "%.1f km".format(distanciaMetros / 1000) else "${distanciaMetros.toInt()} m"
@@ -39,7 +45,7 @@ object RoteamentoService {
             val coords = paradas.joinToString(";") {
                 String.format(java.util.Locale.US, "%.6f,%.6f", it.longitude, it.latitude)
             }
-            val url = URL("$BASE_URL/$coords?overview=full&geometries=geojson")
+            val url = URL("$BASE_URL/$coords?overview=full&geometries=geojson&steps=true")
             conexao = (url.openConnection() as HttpURLConnection).apply {
                 connectTimeout = 8000
                 readTimeout = 8000
@@ -56,11 +62,29 @@ object RoteamentoService {
                 val par = coordenadas.getJSONArray(i)
                 PontoRota(latitude = par.getDouble(1), longitude = par.getDouble(0)) // GeoJSON = [lng, lat]
             }
+            val etapas = buildList {
+                val legs = rota.getJSONArray("legs")
+                for (legIndex in 0 until legs.length()) {
+                    val steps = legs.getJSONObject(legIndex).getJSONArray("steps")
+                    for (stepIndex in 0 until steps.length()) {
+                        val step = steps.getJSONObject(stepIndex)
+                        val nomeRua = step.optString("name").trim()
+                        if (nomeRua.isBlank()) continue
+                        val coordenadasEtapa = step.getJSONObject("geometry").getJSONArray("coordinates")
+                        val pontosEtapa = List(coordenadasEtapa.length()) { pontoIndex ->
+                            val par = coordenadasEtapa.getJSONArray(pontoIndex)
+                            PontoRota(latitude = par.getDouble(1), longitude = par.getDouble(0))
+                        }
+                        if (pontosEtapa.isNotEmpty()) add(EtapaRota(nomeRua, pontosEtapa))
+                    }
+                }
+            }
 
             Rota(
                 pontos = pontos,
                 distanciaMetros = rota.getDouble("distance"),
-                duracaoSegundos = rota.getDouble("duration")
+                duracaoSegundos = rota.getDouble("duration"),
+                etapas = etapas
             )
         } catch (e: Exception) {
             null
