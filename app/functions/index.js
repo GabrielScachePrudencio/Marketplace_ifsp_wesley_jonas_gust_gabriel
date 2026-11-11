@@ -64,7 +64,7 @@ exports.avisarEntregadorProximo = onDocumentUpdated(
           tipo: "ENTREGADOR_PROXIMO",
           vendaId: event.params.vendaId,
           titulo: "Seu entregador está chegando",
-          mensagem: "O entregador está a menos de 187 metros do endereço de entrega.",
+          mensagem: "O entregador está a menos de 50 metros do endereço de entrega.",
         },
         android: {
           priority: "high",

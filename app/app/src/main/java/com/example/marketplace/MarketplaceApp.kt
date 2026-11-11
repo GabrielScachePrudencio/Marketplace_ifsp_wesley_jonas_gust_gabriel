@@ -5,6 +5,8 @@ import android.util.Log
 import com.example.marketplace.data.local.AppDatabase
 import com.example.marketplace.data.sync.ConnectivityObserver
 import com.example.marketplace.data.sync.SyncManager
+import com.example.marketplace.service.MonitorNotificacoesEntrega
+import com.google.firebase.auth.FirebaseAuth
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -15,8 +17,18 @@ class MarketplaceApp : Application() {
 
     private val appScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
-    override fun onCreate() {
+        override fun onCreate() {
         super.onCreate()
+
+        // Mantém o monitor de proximidade ativo enquanto houver usuário autenticado (mesmo com o app minimizado)
+        FirebaseAuth.getInstance().addAuthStateListener { auth ->
+            val uid = auth.currentUser?.uid
+            if (!uid.isNullOrBlank()) {
+                MonitorNotificacoesEntrega.iniciar(this, uid)
+            } else {
+                MonitorNotificacoesEntrega.parar()
+            }
+        }
 
         val db = AppDatabase.getDatabase(this)
         val syncManager = SyncManager(

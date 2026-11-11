@@ -10,6 +10,7 @@ import com.example.marketplace.model.enums.OperacaoPendente
 import com.example.marketplace.model.enums.TipoPendenteSyncronizacao
 import com.example.marketplace.service.FirebaseService
 import com.google.firebase.firestore.DocumentSnapshot
+import com.google.firebase.firestore.SetOptions
 import com.google.gson.Gson
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
@@ -103,7 +104,8 @@ class VendaRepository(
         val atualizada = venda.copy(
             status = novoStatus,
             motoristaId = novoMotoristaId,
-            veiculoId = novoVeiculoId
+            veiculoId = novoVeiculoId,
+            proximidadeNotificada = if (novoStatus == "PRONTO_PARA_ENTREGA" || novoStatus == "PENDENTE") false else venda.proximidadeNotificada
         )
 
         val sucesso = salvarNoFirestore(atualizada)
@@ -229,13 +231,14 @@ class VendaRepository(
             "valorUnitario" to venda.valorUnitario,
             "valorTotal" to venda.valorTotal,
             "status" to venda.status,
+            "proximidadeNotificada" to venda.proximidadeNotificada,
             "data" to venda.data,
             "dataCriacao" to FirestoreDateConverter.paraMillis(venda.dataCriacao)
         )
 
         return withTimeoutOrNull(5000) {
             try {
-                colecao.document(venda.id).set(dados).await()
+                colecao.document(venda.id).set(dados, SetOptions.merge()).await()
                 true
             } catch (e: Exception) {
                 false
@@ -257,6 +260,7 @@ class VendaRepository(
             valorUnitario = doc.getDouble("valorUnitario") ?: 0.0,
             valorTotal = doc.getDouble("valorTotal") ?: 0.0,
             status = doc.getString("status") ?: VendaRegras.STATUS_INICIAL,
+            proximidadeNotificada = doc.getBoolean("proximidadeNotificada") ?: false,
             data = doc.getLong("data") ?: 0L,
             dataCriacao = FirestoreDateConverter.deMillis(doc.getLong("dataCriacao"))
         )

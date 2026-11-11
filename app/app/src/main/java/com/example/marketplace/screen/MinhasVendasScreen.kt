@@ -368,7 +368,12 @@ private fun VendaCard(
                     StatusEntrega.A_CAMINHO,
                     StatusEntrega.ENTREGUE
                 )) ||
-                        (ehVendedor && usuario.perfil == "negociador" && status == StatusEntrega.ENTREGUE)
+                        (ehVendedor && usuario.perfil == "negociador" && status in setOf(
+                            StatusEntrega.PRONTO_PARA_ENTREGA,
+                            StatusEntrega.SAIU_PARA_ENTREGA,
+                            StatusEntrega.A_CAMINHO,
+                            StatusEntrega.ENTREGUE
+                        ))
             if (podeAbrirRastreamento) {
                 Spacer(Modifier.height(8.dp))
                 Button(

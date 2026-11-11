@@ -258,6 +258,17 @@ fun RastreamentoEntregaScreen(
                             if (coord != null) {
                                 destinoLatGeocodificado = coord.latitude
                                 destinoLngGeocodificado = coord.longitude
+                                if (rastreio != null && (rastreio.destinoLat == 0.0 || rastreio.destinoLng == 0.0)) {
+                                    com.google.firebase.firestore.FirebaseFirestore.getInstance()
+                                        .collection("rastreios_entrega")
+                                        .document(rastreio.id)
+                                        .update(
+                                            mapOf(
+                                                "destinoLat" to coord.latitude,
+                                                "destinoLng" to coord.longitude
+                                            )
+                                        )
+                                }
                             }
                         }
                     }
@@ -333,6 +344,14 @@ fun RastreamentoEntregaScreen(
                                 style = MaterialTheme.typography.titleMedium,
                                 fontWeight = FontWeight.Bold
                             )
+                            if (venda.proximidadeNotificada && mostrarMotorista) {
+                                Text(
+                                    "📍 Entregador próximo! (a menos de 50 m do endereço)",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.primary
+                                )
+                            }
                             Text(
                                 "Pedido: ${venda.produtoTitulo}",
                                 style = MaterialTheme.typography.bodyMedium
@@ -423,10 +442,11 @@ fun RastreamentoEntregaScreen(
                                 MarcadorMapa(
                                     latitude = destinoLat,
                                     longitude = destinoLng,
-                                    titulo = "Cerca virtual · 187 m",
+                                    titulo = "Cerca virtual · 50 m",
                                     tipo = TipoMarcador.DESTINO
                                 )
-                            } else null
+                            } else null,
+                            raioCercaMetros = 50.0
                         )
                     }
 
@@ -675,7 +695,7 @@ fun RastreamentoEntregaScreen(
                                 )
 
                                 val nomeCliente = venda.compradorNome.ifBlank { comprador?.nome ?: "" }
-                                if (ehMotorista && nomeCliente.isNotBlank()) {
+                                if ((ehMotorista || usuario.perfil == "negociador") && nomeCliente.isNotBlank()) {
                                     Text(
                                         "Cliente: $nomeCliente",
                                         style = MaterialTheme.typography.bodySmall,

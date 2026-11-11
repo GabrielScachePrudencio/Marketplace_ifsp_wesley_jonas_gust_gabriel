@@ -14,6 +14,7 @@ import com.example.marketplace.model.enums.OperacaoPendente
 import com.example.marketplace.model.enums.TipoPendenteSyncronizacao
 import com.example.marketplace.service.FirebaseService
 import com.google.firebase.firestore.FieldValue
+import com.google.firebase.firestore.SetOptions
 import com.google.gson.Gson
 import kotlinx.coroutines.tasks.await
 import kotlinx.coroutines.withTimeoutOrNull
@@ -214,10 +215,11 @@ class SyncManager(
                             "valorUnitario" to venda.valorUnitario,
                             "valorTotal" to venda.valorTotal,
                             "status" to venda.status,
+                            "proximidadeNotificada" to venda.proximidadeNotificada,
                             "data" to venda.data,
                             "dataCriacao" to FirestoreDateConverter.paraMillis(venda.dataCriacao)
                         )
-                        colecao.document(item.id).set(dados).await()
+                        colecao.document(item.id).set(dados, SetOptions.merge()).await()
                     }
                     OperacaoPendente.DELETE -> {
                         colecao.document(item.id).delete().await()

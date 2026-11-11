@@ -230,9 +230,24 @@ fun HomeMotoristaScreen(
         if (vendasAtivasIds.isNotEmpty() && permissaoConcedida) {
             // Só rastreia se tiver venda ativa e permissão
             tracker.iniciar(vendasAtivasIds)
+            androidx.core.content.ContextCompat.startForegroundService(
+                context,
+                android.content.Intent(context, com.example.marketplace.service.LocationTrackingService::class.java).apply {
+                    action = com.example.marketplace.service.LocationTrackingService.ACTION_START_TRACKING
+                    putStringArrayListExtra(
+                        com.example.marketplace.service.LocationTrackingService.EXTRA_VENDAS_IDS,
+                        ArrayList(vendasAtivasIds)
+                    )
+                }
+            )
         } else {
             // Se não tiver venda ativa ou permissão, para o rastreamento e limpa no servidor
             tracker.pararSeAtivo(limparNoServidor = true)
+            context.stopService(
+                android.content.Intent(context, com.example.marketplace.service.LocationTrackingService::class.java).apply {
+                    action = com.example.marketplace.service.LocationTrackingService.ACTION_STOP_TRACKING
+                }
+            )
         }
     }
 

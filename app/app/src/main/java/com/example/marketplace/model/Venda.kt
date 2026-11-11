@@ -19,6 +19,7 @@ data class Venda(
     val valorUnitario: Double = 0.0,
     val valorTotal: Double = 0.0,
     val status: String = StatusEntrega.PENDENTE.name,
+    val proximidadeNotificada: Boolean = false,
     val data: Long = 0L,
     val dataCriacao: LocalDateTime = LocalDateTime.now()
 ) {

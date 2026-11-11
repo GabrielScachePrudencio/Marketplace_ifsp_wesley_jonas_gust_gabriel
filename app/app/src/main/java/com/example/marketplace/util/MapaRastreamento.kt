@@ -55,7 +55,7 @@ fun MapaRastreamento(
     modifier: Modifier = Modifier,
     rota: Rota? = null,
     cercaVirtual: MarcadorMapa? = null,
-    raioCercaMetros: Double = 187.0,
+    raioCercaMetros: Double = 50.0,
     corRota: Int = 0xFF1A73E8.toInt()
 ) {
     val context = LocalContext.current

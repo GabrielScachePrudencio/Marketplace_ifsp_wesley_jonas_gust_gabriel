@@ -3,6 +3,7 @@ package com.example.marketplace.model
 import android.annotation.SuppressLint
 import android.content.Context
 import com.example.marketplace.repository.LocalizacaoMotoristaRepository
+import com.example.marketplace.service.LocationTrackingService
 import com.google.android.gms.location.*
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -58,6 +59,11 @@ class LocalizacaoMotoristaTracker(
                 scope.launch {
                     idsParaEnviar.forEach { id ->
                         repository.enviarLocalizacao(id, loc.latitude, loc.longitude)
+                        LocationTrackingService.verificarERegistrarProximidade(
+                            vendaId = id,
+                            latitudeMotorista = loc.latitude,
+                            longitudeMotorista = loc.longitude
+                        )
                     }
                 }
             }

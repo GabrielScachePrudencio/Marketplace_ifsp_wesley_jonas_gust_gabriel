@@ -49,43 +49,15 @@ class EntregaMessagingService : FirebaseMessagingService() {
             return
         }
 
-        if (
-            Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
-            ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) !=
-            PackageManager.PERMISSION_GRANTED
-        ) {
-            Log.w(TAG, "Aviso de proximidade recebido, mas a permissão de notificações foi negada.")
-            return
-        }
-
-        val intent = Intent(this, MainActivity::class.java).apply {
-            action = ACTION_ABRIR_RASTREAMENTO
-            putExtra(EXTRA_VENDA_ID, vendaId)
-            flags = Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP
-        }
-        val pendingIntent = PendingIntent.getActivity(
-            this,
-            vendaId.hashCode(),
-            intent,
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        val uid = FirebaseAuth.getInstance().currentUser?.uid
+        mostrarNotificacaoProximidade(
+            context = this,
+            vendaId = vendaId,
+            titulo = message.data["titulo"] ?: "Seu entregador está chegando",
+            mensagem = message.data["mensagem"]
+                ?: "O entregador está a menos de 50 metros do endereço de entrega.",
+            uid = uid
         )
-
-        val notification = NotificationCompat.Builder(this, CHANNEL_ID)
-            .setSmallIcon(R.mipmap.ic_launcher)
-            .setContentTitle(message.data["titulo"] ?: "Seu entregador está chegando")
-            .setContentText(message.data["mensagem"] ?: "Acompanhe a entrega no mapa.")
-            .setStyle(
-                NotificationCompat.BigTextStyle().bigText(
-                    message.data["mensagem"] ?: "Acompanhe a entrega no mapa."
-                )
-            )
-            .setPriority(NotificationCompat.PRIORITY_HIGH)
-            .setCategory(NotificationCompat.CATEGORY_STATUS)
-            .setAutoCancel(true)
-            .setContentIntent(pendingIntent)
-            .build()
-
-        NotificationManagerCompat.from(this).notify(vendaId.hashCode(), notification)
     }
 
     companion object {
@@ -95,6 +67,7 @@ class EntregaMessagingService : FirebaseMessagingService() {
 
         private const val TAG = "EntregaNotifications"
         private const val CHANNEL_ID = "entregas_proximas"
+        private const val PREFS_NAME = "notificacoes_entrega_prefs"
 
         fun criarCanal(context: Context) {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -104,10 +77,92 @@ class EntregaMessagingService : FirebaseMessagingService() {
                     NotificationManager.IMPORTANCE_HIGH
                 ).apply {
                     description = "Avisos quando o entregador estiver perto do endereço."
+                    enableVibration(true)
                 }
                 context.getSystemService(NotificationManager::class.java)
                     .createNotificationChannel(canal)
             }
+        }
+
+        fun jaFoiNotificada(context: Context, uid: String, vendaId: String): Boolean {
+            val prefs = context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            val set = prefs.getStringSet(chavePrefs(uid), emptySet()).orEmpty()
+            return vendaId in set
+        }
+
+        fun marcarComoNotificada(context: Context, uid: String, vendaId: String) {
+            val prefs = context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            val atual = prefs.getStringSet(chavePrefs(uid), emptySet()).orEmpty().toMutableSet()
+            if (atual.add(vendaId)) {
+                prefs.edit().putStringSet(chavePrefs(uid), atual).apply()
+            }
+        }
+
+        fun limparNotificacaoVenda(context: Context, uid: String, vendaId: String) {
+            val prefs = context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            val atual = prefs.getStringSet(chavePrefs(uid), emptySet()).orEmpty().toMutableSet()
+            if (atual.remove(vendaId)) {
+                prefs.edit().putStringSet(chavePrefs(uid), atual).apply()
+            }
+        }
+
+        private fun chavePrefs(uid: String) = "vendas_notificadas_$uid"
+
+        fun mostrarNotificacaoProximidade(
+            context: Context,
+            vendaId: String,
+            titulo: String,
+            mensagem: String,
+            uid: String? = null
+        ) {
+            val appContext = context.applicationContext
+            criarCanal(appContext)
+
+            if (!uid.isNullOrBlank()) {
+                synchronized(this) {
+                    if (jaFoiNotificada(appContext, uid, vendaId)) {
+                        return
+                    }
+                    marcarComoNotificada(appContext, uid, vendaId)
+                }
+            }
+
+            if (
+                Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+                ContextCompat.checkSelfPermission(appContext, Manifest.permission.POST_NOTIFICATIONS) !=
+                PackageManager.PERMISSION_GRANTED
+            ) {
+                Log.w(TAG, "Aviso de proximidade recebido, mas a permissão de notificações foi negada.")
+                return
+            }
+
+            val intent = Intent(appContext, MainActivity::class.java).apply {
+                action = ACTION_ABRIR_RASTREAMENTO
+                putExtra(EXTRA_VENDA_ID, vendaId)
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK or
+                        Intent.FLAG_ACTIVITY_CLEAR_TOP or
+                        Intent.FLAG_ACTIVITY_SINGLE_TOP
+            }
+            val pendingIntent = PendingIntent.getActivity(
+                appContext,
+                vendaId.hashCode(),
+                intent,
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            )
+
+            val notification = NotificationCompat.Builder(appContext, CHANNEL_ID)
+                .setSmallIcon(R.mipmap.ic_launcher)
+                .setContentTitle(titulo)
+                .setContentText(mensagem)
+                .setStyle(NotificationCompat.BigTextStyle().bigText(mensagem))
+                .setPriority(NotificationCompat.PRIORITY_HIGH)
+                .setCategory(NotificationCompat.CATEGORY_STATUS)
+                .setDefaults(NotificationCompat.DEFAULT_ALL)
+                .setAutoCancel(true)
+                .setContentIntent(pendingIntent)
+                .build()
+
+            NotificationManagerCompat.from(appContext).notify(vendaId.hashCode(), notification)
         }
 
         suspend fun registrarToken(uid: String, token: String) {
