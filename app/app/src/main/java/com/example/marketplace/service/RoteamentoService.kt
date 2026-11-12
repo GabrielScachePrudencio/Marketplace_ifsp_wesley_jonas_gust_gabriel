@@ -75,7 +75,14 @@ object RoteamentoService {
                             val par = coordenadasEtapa.getJSONArray(pontoIndex)
                             PontoRota(latitude = par.getDouble(1), longitude = par.getDouble(0))
                         }
-                        if (pontosEtapa.isNotEmpty()) add(EtapaRota(nomeRua, pontosEtapa))
+                        if (pontosEtapa.isNotEmpty()) {
+                            val ultima = lastOrNull()
+                            if (ultima != null && ultima.nomeRua.equals(nomeRua, ignoreCase = true)) {
+                                set(lastIndex, ultima.copy(pontos = ultima.pontos + pontosEtapa))
+                            } else {
+                                add(EtapaRota(nomeRua, pontosEtapa))
+                            }
+                        }
                     }
                 }
             }

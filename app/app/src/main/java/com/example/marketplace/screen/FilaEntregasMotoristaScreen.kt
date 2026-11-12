@@ -24,6 +24,7 @@ import com.example.marketplace.model.RastreioEntrega
 import com.example.marketplace.model.Usuario
 import com.example.marketplace.service.LocationTrackingService
 import com.example.marketplace.util.RequestLocationPermission
+import com.example.marketplace.util.hasLocationPermission
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -46,18 +47,15 @@ fun FilaEntregasMotoristaScreen(
 
     // Gerenciamento de permissões de localização
     var hasLocationPermission by remember {
-        mutableStateOf(
-            androidx.core.content.ContextCompat.checkSelfPermission(
-                context,
-                android.Manifest.permission.ACCESS_FINE_LOCATION
-            ) == android.content.pm.PackageManager.PERMISSION_GRANTED
-        )
+        mutableStateOf(hasLocationPermission(context))
     }
 
     val locationPermissionLauncher = rememberLauncherForActivityResult (
-        contract = androidx.activity.result.contract.ActivityResultContracts.RequestPermission()
-    ) { isGranted ->
-        hasLocationPermission = isGranted
+        contract = androidx.activity.result.contract.ActivityResultContracts.RequestMultiplePermissions()
+    ) { permissions ->
+        hasLocationPermission = permissions[android.Manifest.permission.ACCESS_FINE_LOCATION] == true ||
+                permissions[android.Manifest.permission.ACCESS_COARSE_LOCATION] == true ||
+                hasLocationPermission(context)
     }
 
     RequestLocationPermission (
@@ -123,7 +121,12 @@ fun FilaEntregasMotoristaScreen(
                             },
                             onIniciar = {
                                 if (!hasLocationPermission) {
-                                    locationPermissionLauncher.launch(android.Manifest.permission.ACCESS_FINE_LOCATION)
+                                    locationPermissionLauncher.launch(
+                                        arrayOf(
+                                            android.Manifest.permission.ACCESS_FINE_LOCATION,
+                                            android.Manifest.permission.ACCESS_COARSE_LOCATION
+                                        )
+                                    )
                                 } else {
                                     viewModel.iniciarEntrega(rastreio.id, usuario.uid, index + 1) {
                                         // Iniciar serviço de rastreamento
@@ -131,7 +134,7 @@ fun FilaEntregasMotoristaScreen(
                                             action = LocationTrackingService.ACTION_START_TRACKING
                                             putExtra(LocationTrackingService.EXTRA_VENDA_ID, rastreio.vendaId)
                                         }
-                                        context.startForegroundService(serviceIntent)
+                                        androidx.core.content.ContextCompat.startForegroundService(context, serviceIntent)
                                     }
                                 }
                             },

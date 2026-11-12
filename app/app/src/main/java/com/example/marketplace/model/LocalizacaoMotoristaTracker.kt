@@ -40,12 +40,16 @@ class LocalizacaoMotoristaTracker(
         // Limpa no Firestore apenas as vendas que saíram da lista ativa (ex: foram entregues)
         val removidas = vendasIdsAtuais - novoConjunto
         removidas.forEach { id ->
+            LocationTrackingService.limparCacheVenda(id)
             scope.launch { repository.limparLocalizacao(id) }
         }
 
         callback?.let { fusedClient.removeLocationUpdates(it) }
         callback = null
         vendasIdsAtuais = novoConjunto
+
+        // Se o LocationTrackingService já estiver ativo em foreground, evita duplicar leituras de GPS e escritas no Firestore
+        if (LocationTrackingService.servicoAtivo) return
 
         val request = LocationRequest.Builder(
             Priority.PRIORITY_HIGH_ACCURACY,
@@ -54,6 +58,11 @@ class LocalizacaoMotoristaTracker(
 
         val novoCallback = object : LocationCallback() {
             override fun onLocationResult(result: LocationResult) {
+                if (LocationTrackingService.servicoAtivo) {
+                    callback?.let { fusedClient.removeLocationUpdates(it) }
+                    callback = null
+                    return
+                }
                 val loc = result.lastLocation ?: return
                 val idsParaEnviar = vendasIdsAtuais
                 scope.launch {
@@ -82,6 +91,7 @@ class LocalizacaoMotoristaTracker(
         if (limparNoServidor) {
             val idsParaLimpar = vendasIdsAtuais
             idsParaLimpar.forEach { id ->
+                LocationTrackingService.limparCacheVenda(id)
                 scope.launch { repository.limparLocalizacao(id) }
             }
         }

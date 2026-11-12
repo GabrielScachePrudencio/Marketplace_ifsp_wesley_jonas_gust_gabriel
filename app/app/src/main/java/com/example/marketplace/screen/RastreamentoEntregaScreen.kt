@@ -42,6 +42,7 @@ import com.example.marketplace.service.RoteamentoService
 import com.example.marketplace.util.MapaRastreamento
 import com.example.marketplace.util.MarcadorMapa
 import com.example.marketplace.util.TipoMarcador
+import com.example.marketplace.util.hasLocationPermission
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.tasks.await
 import java.io.File
@@ -76,19 +77,17 @@ fun RastreamentoEntregaScreen(
     val ehMotorista = usuario.perfil == "motorista"
     val scope = rememberCoroutineScope()
     var temPermissaoLocalizacao by remember {
-        mutableStateOf(
-            ContextCompat.checkSelfPermission(
-                context,
-                android.Manifest.permission.ACCESS_FINE_LOCATION
-            ) == PackageManager.PERMISSION_GRANTED
-        )
+        mutableStateOf(hasLocationPermission(context))
     }
     var erroCaptura by remember { mutableStateOf<String?>(null) }
     var fotoPendente by remember { mutableStateOf<Uri?>(null) }
 
     val permissaoLocalizacaoLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.RequestPermission()
-    ) { concedida ->
+        ActivityResultContracts.RequestMultiplePermissions()
+    ) { permissoes ->
+        val concedida = permissoes[android.Manifest.permission.ACCESS_FINE_LOCATION] == true ||
+                permissoes[android.Manifest.permission.ACCESS_COARSE_LOCATION] == true ||
+                hasLocationPermission(context)
         temPermissaoLocalizacao = concedida
         if (!concedida) erroCaptura = "A permissão de localização é necessária para registrar o local da entrega."
     }
@@ -174,54 +173,54 @@ fun RastreamentoEntregaScreen(
                     val pontoOrigem = estado.pontoOrigem
                     val comprador = estado.comprador
                     val usuarioDestino = if (ehMotorista) comprador else (comprador ?: usuario)
-                    LaunchedEffect(venda.id, venda.status) {
-                        if (ehMotorista) {
-                            val entregaAtiva = venda.statusEntrega == StatusEntrega.A_CAMINHO ||
-                                venda.statusEntrega == StatusEntrega.SAIU_PARA_ENTREGA
-                            if (
-                                venda.motoristaId == usuario.uid &&
-                                entregaAtiva &&
-                                temPermissaoLocalizacao
-                            ) {
-                                androidx.core.content.ContextCompat.startForegroundService(
-                                    context,
-                                    Intent(context, LocationTrackingService::class.java).apply {
-                                        action = LocationTrackingService.ACTION_START_TRACKING
-                                        putExtra(LocationTrackingService.EXTRA_VENDA_ID, venda.id)
-                                    }
-                                )
-                            } else if (
-                                venda.statusEntrega == StatusEntrega.ENTREGUE ||
-                                !entregaAtiva ||
-                                venda.motoristaId != usuario.uid
-                            ) {
-                                context.stopService(
-                                    Intent(context, LocationTrackingService::class.java).apply {
-                                        action = LocationTrackingService.ACTION_STOP_TRACKING
-                                    }
-                                )
-                            }
-                        }
-                    }
-
                     // O motorista só aparece se o status for A_CAMINHO ou SAIU_PARA_ENTREGA.
                     val mostrarMotorista = venda.statusEntrega == StatusEntrega.A_CAMINHO ||
                             venda.statusEntrega == StatusEntrega.SAIU_PARA_ENTREGA
 
-                    // Se quem abriu o mapa é o motorista desta entrega, mantém o GPS enviando em tempo real
+                    LaunchedEffect(venda.id, venda.status, temPermissaoLocalizacao) {
+                        if (ehMotorista && venda.motoristaId == usuario.uid) {
+                            if (mostrarMotorista) {
+                                if (!temPermissaoLocalizacao) {
+                                    permissaoLocalizacaoLauncher.launch(
+                                        arrayOf(
+                                            android.Manifest.permission.ACCESS_FINE_LOCATION,
+                                            android.Manifest.permission.ACCESS_COARSE_LOCATION
+                                        )
+                                    )
+                                } else {
+                                    androidx.core.content.ContextCompat.startForegroundService(
+                                        context,
+                                        Intent(context, LocationTrackingService::class.java).apply {
+                                            action = LocationTrackingService.ACTION_START_TRACKING
+                                            putExtra(LocationTrackingService.EXTRA_VENDA_ID, venda.id)
+                                        }
+                                    )
+                                }
+                            } else {
+                                LocationTrackingService.limparCacheVenda(venda.id)
+                                LocationTrackingService.removerLocalizacaoServidor(venda.id)
+                                if (LocationTrackingService.servicoAtivo) {
+                                    context.startService(
+                                        Intent(context, LocationTrackingService::class.java).apply {
+                                            action = LocationTrackingService.ACTION_REMOVE_VENDA
+                                            putExtra(LocationTrackingService.EXTRA_VENDA_ID, venda.id)
+                                            putExtra(LocationTrackingService.EXTRA_LIMPAR_SERVIDOR, true)
+                                        }
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    // Fallback local caso o ForegroundService ainda não esteja ativo
                     if (ehMotorista) {
                         val tracker = remember { LocalizacaoMotoristaTracker(context) }
-                        val temPermissaoGps = remember {
-                            ContextCompat.checkSelfPermission(
-                                context,
-                                android.Manifest.permission.ACCESS_FINE_LOCATION
-                            ) == PackageManager.PERMISSION_GRANTED
-                        }
-                        LaunchedEffect(venda.id, mostrarMotorista, temPermissaoGps) {
-                            if (mostrarMotorista && venda.motoristaId == usuario.uid && temPermissaoGps) {
+                        LaunchedEffect(venda.id, mostrarMotorista, temPermissaoLocalizacao) {
+                            if (mostrarMotorista && venda.motoristaId == usuario.uid && temPermissaoLocalizacao) {
                                 tracker.iniciar(venda.id)
                             } else {
-                                tracker.pararSeAtivo(limparNoServidor = false)
+                                val limparServidor = venda.motoristaId == usuario.uid && !mostrarMotorista
+                                tracker.pararSeAtivo(limparNoServidor = limparServidor)
                             }
                         }
 
@@ -515,7 +514,10 @@ fun RastreamentoEntregaScreen(
                                 erroCaptura = null
                                 if (!temPermissaoLocalizacao) {
                                     permissaoLocalizacaoLauncher.launch(
-                                        android.Manifest.permission.ACCESS_FINE_LOCATION
+                                        arrayOf(
+                                            android.Manifest.permission.ACCESS_FINE_LOCATION,
+                                            android.Manifest.permission.ACCESS_COARSE_LOCATION
+                                        )
                                     )
                                     return@Button
                                 }

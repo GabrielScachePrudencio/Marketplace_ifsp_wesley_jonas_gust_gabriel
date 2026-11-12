@@ -21,17 +21,15 @@ fun RequestLocationPermission(
 ) {
     val context = LocalContext.current
     var hasPermission by remember {
-        mutableStateOf(
-            ContextCompat.checkSelfPermission(
-                context,
-                Manifest.permission.ACCESS_FINE_LOCATION
-            ) == PackageManager.PERMISSION_GRANTED
-        )
+        mutableStateOf(hasLocationPermission(context))
     }
 
     val locationPermissionLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.RequestPermission()
-    ) { isGranted ->
+        contract = ActivityResultContracts.RequestMultiplePermissions()
+    ) { permissions ->
+        val isGranted = permissions[Manifest.permission.ACCESS_FINE_LOCATION] == true ||
+                permissions[Manifest.permission.ACCESS_COARSE_LOCATION] == true ||
+                hasLocationPermission(context)
         hasPermission = isGranted
         if (isGranted) {
             onPermissionGranted()
@@ -42,7 +40,12 @@ fun RequestLocationPermission(
 
     LaunchedEffect(Unit) {
         if (!hasPermission) {
-            locationPermissionLauncher.launch(Manifest.permission.ACCESS_FINE_LOCATION)
+            locationPermissionLauncher.launch(
+                arrayOf(
+                    Manifest.permission.ACCESS_FINE_LOCATION,
+                    Manifest.permission.ACCESS_COARSE_LOCATION
+                )
+            )
         } else {
             onPermissionGranted()
         }
@@ -50,8 +53,13 @@ fun RequestLocationPermission(
 }
 
 fun hasLocationPermission(context: Context): Boolean {
-    return ContextCompat.checkSelfPermission(
+    val fineGranted = ContextCompat.checkSelfPermission(
         context,
         Manifest.permission.ACCESS_FINE_LOCATION
     ) == PackageManager.PERMISSION_GRANTED
+    val coarseGranted = ContextCompat.checkSelfPermission(
+        context,
+        Manifest.permission.ACCESS_COARSE_LOCATION
+    ) == PackageManager.PERMISSION_GRANTED
+    return fineGranted || coarseGranted
 }

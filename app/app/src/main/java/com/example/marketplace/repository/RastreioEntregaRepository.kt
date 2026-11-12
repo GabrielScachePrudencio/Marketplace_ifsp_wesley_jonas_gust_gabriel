@@ -225,18 +225,34 @@ class RastreioEntregaRepository(
 
     /** Tela do motorista: entregas disponíveis (PRONTO_PARA_ENTREGA sem motorista) */
     fun buscarEntregasDisponiveis(negociantesIds: List<String>): Flow<List<RastreioEntrega>> = callbackFlow {
-        if (negociantesIds.isEmpty()) {
+        val idsValidos = negociantesIds.filter { it.isNotBlank() }.toSet()
+        if (idsValidos.isEmpty()) {
             trySend(emptyList())
             awaitClose()
             return@callbackFlow
         }
 
+        val pontosIds = try {
+            FirebaseService.firestore.collection("pontos_referencia")
+                .whereIn("negocianteId", idsValidos.take(30))
+                .get()
+                .await()
+                .documents
+                .map { it.id }
+                .toSet()
+        } catch (e: Exception) {
+            emptySet()
+        }
+
+        val origensAceitas = idsValidos + pontosIds
         val listener = colecao
-            .whereIn("pontoOrigemId", negociantesIds)
             .whereEqualTo("motoristaId", "")
             .addSnapshotListener { snapshot, erro ->
                 if (erro != null) return@addSnapshotListener
-                val disponiveis = snapshot?.documents?.map { rastreioDeDocumento(it) } ?: emptyList()
+                val disponiveis = snapshot?.documents
+                    ?.map { rastreioDeDocumento(it) }
+                    ?.filter { it.finalizadoEm == null && it.pontoOrigemId in origensAceitas }
+                    ?: emptyList()
                 trySend(disponiveis)
             }
         awaitClose { listener.remove() }

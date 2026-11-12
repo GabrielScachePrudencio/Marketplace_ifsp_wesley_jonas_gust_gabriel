@@ -125,6 +125,8 @@ class VendaRepository(
 
         // Se mudou para PRONTO_PARA_ENTREGA e foi informado ponto de origem, cria rastreio
         if (novoStatus == "PRONTO_PARA_ENTREGA" && !pontoOrigemId.isNullOrBlank()) {
+            com.example.marketplace.service.LocationTrackingService.limparCacheVenda(id)
+            com.example.marketplace.service.LocationTrackingService.removerLocalizacaoServidor(id)
             rastreioEntregaRepository.criarRastreio(
                 vendaId = id,
                 pontoOrigemId = pontoOrigemId,
@@ -133,19 +135,26 @@ class VendaRepository(
                 destinoLng = destinoLng ?: 0.0
             )
         } else if (novoStatus == "PRONTO_PARA_ENTREGA" && pontoOrigemId.isNullOrBlank()) {
-            // Motorista devolveu/cancelou a coleta -> limpa motorista do rastreio
+            // Motorista devolveu/cancelou a coleta -> limpa motorista do rastreio e localização ativa
+            com.example.marketplace.service.LocationTrackingService.limparCacheVenda(id)
+            com.example.marketplace.service.LocationTrackingService.removerLocalizacaoServidor(id)
             rastreioEntregaRepository.cancelarColetaEntrega(id)
         } else if (novoStatus == "A_CAMINHO" || novoStatus == "SAIU_PARA_ENTREGA") {
+            com.example.marketplace.service.LocationTrackingService.limparCacheVenda(id)
             val rastreio = rastreioEntregaRepository.buscarPorVendaIdUmaVez(id)
             if (rastreio != null && novoMotoristaId.isNotBlank()) {
                 rastreioEntregaRepository.iniciarEntrega(rastreio.id, novoMotoristaId)
             }
         } else if (novoStatus == "ENTREGUE") {
+            com.example.marketplace.service.LocationTrackingService.limparCacheVenda(id)
+            com.example.marketplace.service.LocationTrackingService.removerLocalizacaoServidor(id)
             val rastreio = rastreioEntregaRepository.buscarPorVendaIdUmaVez(id)
             if (rastreio != null) {
                 rastreioEntregaRepository.finalizarEntrega(rastreio.id, rastreio.ultimaLat, rastreio.ultimaLng)
             }
         } else if (novoStatus == "CANCELADA") {
+            com.example.marketplace.service.LocationTrackingService.limparCacheVenda(id)
+            com.example.marketplace.service.LocationTrackingService.removerLocalizacaoServidor(id)
             // Devolve a quantidade ao estoque do produto
             val produto = produtoRepository.buscarProdutoPorId(venda.produtoId)
             if (produto != null) {
@@ -158,6 +167,9 @@ class VendaRepository(
             if (rastreio != null) {
                 rastreioEntregaRepository.excluirRastreio(rastreio)
             }
+        } else if (novoStatus == "PENDENTE") {
+            com.example.marketplace.service.LocationTrackingService.limparCacheVenda(id)
+            com.example.marketplace.service.LocationTrackingService.removerLocalizacaoServidor(id)
         }
 
         return atualizada

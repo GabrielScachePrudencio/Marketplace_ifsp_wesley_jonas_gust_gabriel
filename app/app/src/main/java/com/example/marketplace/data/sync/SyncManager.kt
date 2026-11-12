@@ -111,6 +111,8 @@ class SyncManager(
                             "negocianteId" to usuario.negocianteId,
                             "negociantesIds" to usuario.todosNegociantesIds(),
                             "fotoPerfil" to usuario.fotoPerfil,
+                            "latitude" to usuario.latitude,
+                            "longitude" to usuario.longitude,
                             "dataCriacao" to FirestoreDateConverter.paraMillis(usuario.dataCriacao)
                         )
                         colecao.document(item.id).set(dados).await()

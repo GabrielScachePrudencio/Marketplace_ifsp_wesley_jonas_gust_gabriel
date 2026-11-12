@@ -50,6 +50,7 @@ import com.example.marketplace.model.LocalizacaoMotoristaTracker
 import com.example.marketplace.util.AvatarUsuario
 import com.example.marketplace.util.CampoBusca
 import com.example.marketplace.util.correspondeBusca
+import com.example.marketplace.util.hasLocationPermission
 import com.example.marketplace.util.ImageUtils
 import com.example.marketplace.model.enums.StatusEntrega
 import com.example.marketplace.model.Usuario
@@ -201,21 +202,25 @@ fun HomeMotoristaScreen(
     val tracker = remember { LocalizacaoMotoristaTracker(context) }
 
     var permissaoConcedida by remember {
-        mutableStateOf(
-            ContextCompat.checkSelfPermission(context, android.Manifest.permission.ACCESS_FINE_LOCATION) ==
-                    PackageManager.PERMISSION_GRANTED
-        )
+        mutableStateOf(hasLocationPermission(context))
     }
 
     val permissionLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.RequestPermission()
-    ) { concedida ->
-        permissaoConcedida = concedida
+        contract = ActivityResultContracts.RequestMultiplePermissions()
+    ) { permissoes ->
+        permissaoConcedida = permissoes[android.Manifest.permission.ACCESS_FINE_LOCATION] == true ||
+                permissoes[android.Manifest.permission.ACCESS_COARSE_LOCATION] == true ||
+                hasLocationPermission(context)
     }
 
     LaunchedEffect(Unit) {
         if (!permissaoConcedida) {
-            permissionLauncher.launch(android.Manifest.permission.ACCESS_FINE_LOCATION)
+            permissionLauncher.launch(
+                arrayOf(
+                    android.Manifest.permission.ACCESS_FINE_LOCATION,
+                    android.Manifest.permission.ACCESS_COARSE_LOCATION
+                )
+            )
         }
     }
 
@@ -229,7 +234,6 @@ fun HomeMotoristaScreen(
     LaunchedEffect(vendasAtivasIds, permissaoConcedida) {
         if (vendasAtivasIds.isNotEmpty() && permissaoConcedida) {
             // Só rastreia se tiver venda ativa e permissão
-            tracker.iniciar(vendasAtivasIds)
             androidx.core.content.ContextCompat.startForegroundService(
                 context,
                 android.content.Intent(context, com.example.marketplace.service.LocationTrackingService::class.java).apply {
@@ -240,14 +244,22 @@ fun HomeMotoristaScreen(
                     )
                 }
             )
+            tracker.iniciar(vendasAtivasIds)
         } else {
             // Se não tiver venda ativa ou permissão, para o rastreamento e limpa no servidor
             tracker.pararSeAtivo(limparNoServidor = true)
-            context.stopService(
-                android.content.Intent(context, com.example.marketplace.service.LocationTrackingService::class.java).apply {
-                    action = com.example.marketplace.service.LocationTrackingService.ACTION_STOP_TRACKING
-                }
-            )
+            if (com.example.marketplace.service.LocationTrackingService.servicoAtivo) {
+                context.startService(
+                    android.content.Intent(context, com.example.marketplace.service.LocationTrackingService::class.java).apply {
+                        action = com.example.marketplace.service.LocationTrackingService.ACTION_STOP_TRACKING
+                        putExtra(com.example.marketplace.service.LocationTrackingService.EXTRA_LIMPAR_SERVIDOR, true)
+                    }
+                )
+            } else {
+                context.stopService(
+                    android.content.Intent(context, com.example.marketplace.service.LocationTrackingService::class.java)
+                )
+            }
         }
     }
 

@@ -7,6 +7,7 @@ import android.app.PendingIntent
 import android.app.Service
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.content.pm.ServiceInfo
 import android.location.Location
 import android.os.Build
 import android.os.IBinder
@@ -14,6 +15,7 @@ import android.os.Looper
 import android.util.Log
 import androidx.core.app.ActivityCompat
 import androidx.core.app.NotificationCompat
+import androidx.core.app.ServiceCompat
 import com.example.marketplace.MainActivity
 import com.example.marketplace.R
 import com.google.android.gms.location.FusedLocationProviderClient
@@ -35,8 +37,10 @@ class LocationTrackingService : Service() {
     companion object {
         const val ACTION_START_TRACKING = "ACTION_START_TRACKING"
         const val ACTION_STOP_TRACKING = "ACTION_STOP_TRACKING"
+        const val ACTION_REMOVE_VENDA = "ACTION_REMOVE_VENDA"
         const val EXTRA_VENDA_ID = "EXTRA_VENDA_ID"
         const val EXTRA_VENDAS_IDS = "EXTRA_VENDAS_IDS"
+        const val EXTRA_LIMPAR_SERVIDOR = "EXTRA_LIMPAR_SERVIDOR"
 
         private const val CHANNEL_ID = "rastreio_entrega_channel"
         private const val NOTIFICATION_ID = 1001
@@ -44,10 +48,35 @@ class LocationTrackingService : Service() {
         const val RAIO_CERCA_METROS = 50f
         private const val TAG = "LocationTracking"
 
+        @Volatile
+        var servicoAtivo: Boolean = false
+            private set
+
         private val destinosCache = ConcurrentHashMap<String, Pair<Double, Double>>()
         private val proximidadeNotificadaMemory = ConcurrentHashMap.newKeySet<String>()
         private val carregandoDestino = ConcurrentHashMap.newKeySet<String>()
         private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
+        fun limparCacheVenda(vendaId: String) {
+            if (vendaId.isBlank()) return
+            destinosCache.remove(vendaId)
+            proximidadeNotificadaMemory.remove(vendaId)
+            carregandoDestino.remove(vendaId)
+        }
+
+        fun limparTodosCaches() {
+            destinosCache.clear()
+            proximidadeNotificadaMemory.clear()
+            carregandoDestino.clear()
+        }
+
+        fun removerLocalizacaoServidor(vendaId: String) {
+            if (vendaId.isBlank()) return
+            FirebaseFirestore.getInstance()
+                .collection("localizacoes_tempo_real")
+                .document(vendaId)
+                .delete()
+        }
 
         fun verificarERegistrarProximidade(
             vendaId: String,
@@ -273,23 +302,55 @@ class LocationTrackingService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
             ACTION_START_TRACKING -> {
+                iniciarModoForeground()
+
+                val temListaCompleta = intent.hasExtra(EXTRA_VENDAS_IDS)
                 val listaExtra = intent.getStringArrayListExtra(EXTRA_VENDAS_IDS).orEmpty()
                 val unicoExtra = intent.getStringExtra(EXTRA_VENDA_ID)
                 val novosIds = (listaExtra + listOfNotNull(unicoExtra))
                     .filter { it.isNotBlank() }
                     .toSet()
 
+                if (temListaCompleta) {
+                    val removidos = vendasIdsAtivas - novosIds
+                    removidos.forEach { id ->
+                        vendasIdsAtivas.remove(id)
+                        limparCacheVenda(id)
+                        removerLocalizacaoServidor(id)
+                    }
+                }
+
                 if (novosIds.isNotEmpty()) {
-                    startForeground(NOTIFICATION_ID, buildNotification())
                     vendasIdsAtivas.addAll(novosIds)
                     novosIds.forEach { id -> carregarDestinoAssincrono(id) }
                     if (locationCallback == null) {
                         iniciarAtualizacoesDeLocalizacao()
                     }
+                } else if (vendasIdsAtivas.isEmpty()) {
+                    pararAtualizacoes(limparNoServidor = false)
+                    stopForeground(STOP_FOREGROUND_REMOVE)
+                    stopSelf()
+                }
+            }
+            ACTION_REMOVE_VENDA -> {
+                val vendaId = intent.getStringExtra(EXTRA_VENDA_ID).orEmpty()
+                val limparServidor = intent.getBooleanExtra(EXTRA_LIMPAR_SERVIDOR, true)
+                if (vendaId.isNotBlank()) {
+                    vendasIdsAtivas.remove(vendaId)
+                    limparCacheVenda(vendaId)
+                    if (limparServidor) {
+                        removerLocalizacaoServidor(vendaId)
+                    }
+                }
+                if (vendasIdsAtivas.isEmpty()) {
+                    pararAtualizacoes(limparNoServidor = false)
+                    stopForeground(STOP_FOREGROUND_REMOVE)
+                    stopSelf()
                 }
             }
             ACTION_STOP_TRACKING -> {
-                pararAtualizacoes()
+                val limparServidor = intent.getBooleanExtra(EXTRA_LIMPAR_SERVIDOR, false)
+                pararAtualizacoes(limparNoServidor = limparServidor)
                 stopForeground(STOP_FOREGROUND_REMOVE)
                 stopSelf()
             }
@@ -297,20 +358,42 @@ class LocationTrackingService : Service() {
         return START_NOT_STICKY
     }
 
+    private fun iniciarModoForeground() {
+        val tipoServico = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION
+        } else {
+            0
+        }
+        ServiceCompat.startForeground(this, NOTIFICATION_ID, buildNotification(), tipoServico)
+    }
+
     private fun iniciarAtualizacoesDeLocalizacao() {
-        if (ActivityCompat.checkSelfPermission(
-                this,
-                android.Manifest.permission.ACCESS_FINE_LOCATION
-            ) != PackageManager.PERMISSION_GRANTED
-        ) {
+        val temFine = ActivityCompat.checkSelfPermission(
+            this,
+            android.Manifest.permission.ACCESS_FINE_LOCATION
+        ) == PackageManager.PERMISSION_GRANTED
+        val temCoarse = ActivityCompat.checkSelfPermission(
+            this,
+            android.Manifest.permission.ACCESS_COARSE_LOCATION
+        ) == PackageManager.PERMISSION_GRANTED
+
+        if (!temFine && !temCoarse) {
+            servicoAtivo = false
+            stopForeground(STOP_FOREGROUND_REMOVE)
             stopSelf()
             return
         }
 
+        val prioridade = if (temFine) {
+            Priority.PRIORITY_HIGH_ACCURACY
+        } else {
+            Priority.PRIORITY_BALANCED_POWER_ACCURACY
+        }
+
         val locationRequest = LocationRequest.Builder(
-            Priority.PRIORITY_HIGH_ACCURACY,
+            prioridade,
             INTERVALO_ATUALIZACAO_MS
-        ).build()
+        ).setMinUpdateIntervalMillis(3000L).build()
 
         locationCallback = object : LocationCallback() {
             override fun onLocationResult(result: LocationResult) {
@@ -328,6 +411,7 @@ class LocationTrackingService : Service() {
             locationCallback as LocationCallback,
             Looper.getMainLooper()
         )
+        servicoAtivo = true
     }
 
     private fun enviarLocalizacaoParaFirestore(vendaId: String, lat: Double, lng: Double) {
@@ -341,9 +425,16 @@ class LocationTrackingService : Service() {
             .set(dados)
     }
 
-    private fun pararAtualizacoes() {
+    private fun pararAtualizacoes(limparNoServidor: Boolean = false) {
+        servicoAtivo = false
         locationCallback?.let { fusedLocationClient.removeLocationUpdates(it) }
         locationCallback = null
+        if (limparNoServidor) {
+            vendasIdsAtivas.forEach { vendaId ->
+                limparCacheVenda(vendaId)
+                removerLocalizacaoServidor(vendaId)
+            }
+        }
         vendasIdsAtivas.clear()
     }
 

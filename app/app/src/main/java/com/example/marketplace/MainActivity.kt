@@ -35,6 +35,8 @@ import com.example.marketplace.screen.ProdutoListScreen
 import com.example.marketplace.screen.FilaEntregasMotoristaScreen
 import com.example.marketplace.screen.RastreamentoEntregaScreen
 import com.example.marketplace.service.EntregaMessagingService
+import com.example.marketplace.service.LocationTrackingService
+import com.example.marketplace.service.MonitorNotificacoesEntrega
 import com.example.marketplace.service.RegistroNotificacoesEntrega
 
 
@@ -129,6 +131,13 @@ class MainActivity : ComponentActivity() {
                     // =================================================
 
                     val onLogout: () -> Unit = {
+                        MonitorNotificacoesEntrega.parar()
+                        LocationTrackingService.limparTodosCaches()
+                        context.stopService(
+                            android.content.Intent(context, LocationTrackingService::class.java).apply {
+                                action = LocationTrackingService.ACTION_STOP_TRACKING
+                            }
+                        )
 
                         loginViewModel.logout()
 
