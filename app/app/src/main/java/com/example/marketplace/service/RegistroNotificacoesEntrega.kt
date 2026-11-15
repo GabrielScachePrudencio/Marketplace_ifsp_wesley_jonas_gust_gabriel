@@ -22,7 +22,7 @@ import java.util.concurrent.ConcurrentHashMap
 /**
  * Mantém a escuta em tempo real no Firestore (no nível do ApplicationContext)
  * para avisar tanto o COMPRADOR quanto o NEGOCIADOR quando o motorista entrar
- * no raio de 50 m do endereço de entrega, mesmo que o app esteja minimizado.
+ * no raio de 10 m do endereço de entrega, mesmo que o app esteja minimizado.
  */
 object MonitorNotificacoesEntrega {
     private const val TAG = "MonitorNotificacoes"
@@ -38,6 +38,7 @@ object MonitorNotificacoesEntrega {
         if (uid.isBlank()) return
         val appContext = context.applicationContext
         EntregaMessagingService.criarCanal(appContext)
+        ProximidadeEntregaPolicy.carregar(appContext)
 
         if (uidMonitorado == uid && listenerComprador != null && listenerVendedor != null) {
             return
@@ -45,6 +46,11 @@ object MonitorNotificacoesEntrega {
 
         parar()
         uidMonitorado = uid
+        LogNotificacoesEntrega.registrar(
+            "Monitor",
+            "Escuta de vendas iniciada para uid ${uid.take(8)}... " +
+                "(comprador e vendedor)."
+        )
 
         val firestore = FirebaseFirestore.getInstance()
 
@@ -109,16 +115,77 @@ object MonitorNotificacoesEntrega {
         val status = doc.getString("status").orEmpty()
         val entregaAtiva = status == "A_CAMINHO" || status == "SAIU_PARA_ENTREGA"
 
+        LogNotificacoesEntrega.registrar(
+            "Monitor",
+            "Venda ${vendaId.take(8)} (${if (ehComprador) "comprador" else "vendedor"}): " +
+                "status=$status proximidade=$proximidadeNotificada"
+        )
+
+        if (!entregaAtiva) {
+            EntregaMessagingService.limparNotificacaoInicio(context, uid, vendaId)
+        } else {
+            val statusAvisoServidor = doc.getString("notificacaoInicioStatus")
+            val permissaoNotificacaoConcedida =
+                Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||
+                    ContextCompat.checkSelfPermission(
+                        context,
+                        Manifest.permission.POST_NOTIFICATIONS
+                    ) == PackageManager.PERMISSION_GRANTED
+            if (
+                statusAvisoServidor != "enviada" &&
+                permissaoNotificacaoConcedida &&
+                !EntregaMessagingService.jaFoiNotificadaInicio(context, uid, vendaId)
+            ) {
+                LogNotificacoesEntrega.registrar(
+                    "Monitor",
+                    "Venda ${vendaId.take(8)}: entrega ativa detectada, exibindo aviso de início local."
+                )
+                val produtoTitulo = doc.getString("produtoTitulo").orEmpty().ifBlank {
+                    "Pedido #${vendaId.take(8)}"
+                }
+                val titulo = if (ehComprador) {
+                    "Seu pedido saiu para entrega"
+                } else {
+                    "Entrega iniciada"
+                }
+                EntregaMessagingService.mostrarNotificacaoEntregaIniciada(
+                    context = context,
+                    vendaId = vendaId,
+                    titulo = titulo,
+                    mensagem = "O pedido \"$produtoTitulo\" saiu para entrega. " +
+                        "Toque para acompanhar a localização."
+                )
+                EntregaMessagingService.marcarInicioComoNotificada(context, uid, vendaId)
+                Log.i(TAG, "Aviso local de início exibido para a venda $vendaId.")
+            } else {
+                LogNotificacoesEntrega.registrar(
+                    "Monitor",
+                    "Venda ${vendaId.take(8)}: aviso de início não exibido " +
+                        "(statusServidor=$statusAvisoServidor permissao=$permissaoNotificacaoConcedida " +
+                        "jaNotificada=${EntregaMessagingService.jaFoiNotificadaInicio(context, uid, vendaId)})."
+                )
+            }
+        }
+
         if (!proximidadeNotificada) {
             estadoAnteriorProximidade[chaveEstado] = false
             EntregaMessagingService.limparNotificacaoVenda(context, uid, vendaId)
             return
         }
 
+        LogNotificacoesEntrega.registrar(
+            "Monitor",
+            "Venda ${vendaId.take(8)}: FLAG proximidadeNotificada=true recebida do Firestore."
+        )
+
         val anterior = estadoAnteriorProximidade.put(chaveEstado, true)
         if (!entregaAtiva) {
             // Pedido já foi finalizado ou cancelado; marca como visto para não notificar retroativamente
             EntregaMessagingService.marcarComoNotificada(context, uid, vendaId)
+            LogNotificacoesEntrega.registrar(
+                "Monitor",
+                "Venda ${vendaId.take(8)}: proximidade ignorada pois a entrega não está ativa (status=$status)."
+            )
             return
         }
 
@@ -137,9 +204,9 @@ object MonitorNotificacoesEntrega {
                 "Entregador próximo ao cliente"
             }
             val mensagem = if (ehComprador) {
-                "O entregador do pedido \"$produtoTitulo\" está a menos de 50 metros do seu endereço. Toque para acompanhar no mapa."
+                "O entregador do pedido \"$produtoTitulo\" está a menos de ${ProximidadeEntregaPolicy.raioMetros.toInt()} metros do seu endereço. Toque para acompanhar no mapa."
             } else {
-                "O entregador do pedido \"$produtoTitulo\" está a menos de 50 metros do endereço do comprador. Toque para acompanhar no mapa."
+                "O entregador do pedido \"$produtoTitulo\" está a menos de ${ProximidadeEntregaPolicy.raioMetros.toInt()} metros do endereço do comprador. Toque para acompanhar no mapa."
             }
 
             EntregaMessagingService.mostrarNotificacaoProximidade(
@@ -148,6 +215,13 @@ object MonitorNotificacoesEntrega {
                 titulo = titulo,
                 mensagem = mensagem,
                 uid = uid
+            )
+        } else {
+            LogNotificacoesEntrega.registrar(
+                "Monitor",
+                "Venda ${vendaId.take(8)}: proximidade NÃO notificada " +
+                    "(mudouAgora=$mudouAgora eventoRecente=$eventoRecente " +
+                    "jaNotificada=${EntregaMessagingService.jaFoiNotificada(context, uid, vendaId)})."
             )
         }
     }
@@ -165,6 +239,9 @@ fun RegistroNotificacoesEntrega(uid: String) {
                 "Notificações desativadas. Ative-as nas configurações para receber avisos de entrega.",
                 Toast.LENGTH_LONG
             ).show()
+        } else {
+            MonitorNotificacoesEntrega.parar()
+            MonitorNotificacoesEntrega.iniciar(context, uid)
         }
     }
 

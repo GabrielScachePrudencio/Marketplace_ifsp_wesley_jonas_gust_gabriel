@@ -1,5 +1,6 @@
 package com.example.marketplace.service
 
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
@@ -14,6 +15,14 @@ data class EnderecoCep(
     val bairro: String,
     val cidade: String,
     val estado: String
+)
+
+data class EnderecoLocalizacao(
+    val rua: String,
+    val numero: String,
+    val cidade: String,
+    val estado: String,
+    val cep: String
 )
 
 object GeocodingService {
@@ -75,22 +84,48 @@ object GeocodingService {
         }
     }
 
-    suspend fun buscarRuaPorCoordenadas(latitude: Double, longitude: Double): String? =
-        withContext(Dispatchers.IO) {
-            try {
-                val url = "https://api.geoapify.com/v1/geocode/reverse" +
-                        "?lat=$latitude&lon=$longitude&format=json&apiKey=$API_KEY"
-                client.newCall(Request.Builder().url(url).build()).execute().use { response ->
-                    if (!response.isSuccessful) return@withContext null
-                    val resultados = JSONObject(response.body?.string().orEmpty()).optJSONArray("results")
-                    val resultado = resultados?.optJSONObject(0) ?: return@withContext null
-                    resultado.optString("street").takeIf { it.isNotBlank() }
-                }
-            } catch (e: Exception) {
-                android.util.Log.e("Geocoding", "Falha ao buscar rua da localização.", e)
-                null
+    suspend fun buscarEnderecoPorCoordenadas(
+        latitude: Double,
+        longitude: Double
+    ): EnderecoLocalizacao? = withContext(Dispatchers.IO) {
+        try {
+            val url = "https://api.geoapify.com/v1/geocode/reverse" +
+                    "?lat=$latitude&lon=$longitude&format=json&apiKey=$API_KEY"
+            client.newCall(Request.Builder().url(url).build()).execute().use { response ->
+                if (!response.isSuccessful) return@withContext null
+                val resultados = JSONObject(response.body?.string().orEmpty()).optJSONArray("results")
+                val resultado = resultados?.optJSONObject(0) ?: return@withContext null
+                val cidade = listOf(
+                    resultado.optString("city"),
+                    resultado.optString("municipality"),
+                    resultado.optString("town"),
+                    resultado.optString("village"),
+                    resultado.optString("county"),
+                    resultado.optString("suburb")
+                ).firstOrNull { it.isNotBlank() }.orEmpty()
+
+                EnderecoLocalizacao(
+                    rua = resultado.optString("street").ifBlank {
+                        resultado.optString("address_line1")
+                    },
+                    numero = resultado.optString("housenumber"),
+                    cidade = cidade,
+                    estado = resultado.optString("state_code").ifBlank {
+                        resultado.optString("state")
+                    },
+                    cep = resultado.optString("postcode")
+                )
             }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            android.util.Log.e("Geocoding", "Falha ao converter localização em endereço.", e)
+            null
         }
+    }
+
+    suspend fun buscarRuaPorCoordenadas(latitude: Double, longitude: Double): String? =
+        buscarEnderecoPorCoordenadas(latitude, longitude)?.rua
 
     /** Preenche rua/cidade/estado a partir do CEP (ViaCEP, gratuito e sem chave). */
     suspend fun buscarEnderecoPorCep(cep: String): EnderecoCep? = withContext(Dispatchers.IO) {

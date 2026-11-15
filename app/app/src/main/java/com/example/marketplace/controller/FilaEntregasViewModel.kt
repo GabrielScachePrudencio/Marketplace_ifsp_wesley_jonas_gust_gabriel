@@ -69,19 +69,34 @@ class FilaEntregasViewModel(
         viewModelScope.launch {
             _uiState.value = FilaEntregasUiState.Loading
             try {
-                repository.iniciarEntrega(rastreioId, motoristaId, posicao)
                 val rastreio = _fila.value.find { it.id == rastreioId } ?: repository.buscarPorId(rastreioId)
-                if (rastreio != null && rastreio.vendaId.isNotBlank()) {
-                    try {
-                        vendaRepository?.atualizarStatusVenda(
-                            id = rastreio.vendaId,
-                            novoStatus = "A_CAMINHO",
-                            motoristaId = motoristaId
-                        )
-                    } catch (_: Exception) {}
+                    ?: error("Entrega não encontrada na fila.")
+                if (rastreio.vendaId.isBlank()) {
+                    error("Não foi possível identificar a venda desta entrega.")
                 }
-                _uiState.value = FilaEntregasUiState.Sucesso("Entrega iniciada")
+
+                val vendas = checkNotNull(vendaRepository) {
+                    "Não foi possível atualizar o status da venda."
+                }
+                val venda = vendas.buscarVendaPorId(rastreio.vendaId)
+                    ?: error("Venda não encontrada.")
+                if (venda.statusEntrega == com.example.marketplace.model.enums.StatusEntrega.PRONTO_PARA_ENTREGA) {
+                    check(!venda.veiculoId.isNullOrBlank()) {
+                        "Selecione um veículo antes de iniciar a entrega."
+                    }
+                    vendas.atualizarStatusVenda(
+                        id = rastreio.vendaId,
+                        novoStatus = "A_CAMINHO",
+                        perfil = "motorista",
+                        motoristaId = motoristaId,
+                        veiculoId = venda.veiculoId
+                    )
+                }
+                repository.iniciarEntrega(rastreioId, motoristaId, posicao)
+                _uiState.value = FilaEntregasUiState.Sucesso("Retirada comprovada e entrega iniciada")
                 onSucesso()
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
             } catch (e: Exception) {
                 _uiState.value = FilaEntregasUiState.Erro(e.message ?: "Erro ao iniciar entrega")
             }

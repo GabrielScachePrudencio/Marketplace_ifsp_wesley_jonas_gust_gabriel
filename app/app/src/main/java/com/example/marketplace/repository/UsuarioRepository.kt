@@ -9,6 +9,7 @@ import com.example.marketplace.model.enums.OperacaoPendente
 import com.example.marketplace.model.enums.TipoPendenteSyncronizacao
 import com.example.marketplace.service.FirebaseService
 import com.google.firebase.firestore.FieldValue
+import com.google.firebase.firestore.SetOptions
 import com.google.gson.Gson
 import kotlinx.coroutines.tasks.await
 import kotlinx.coroutines.withTimeoutOrNull
@@ -310,7 +311,7 @@ class UsuarioRepository(
 
         return withTimeoutOrNull(5000) {
             try {
-                colecao.document(usuario.uid).set(dados).await()
+                colecao.document(usuario.uid).set(dados, SetOptions.merge()).await()
                 true
             } catch (e: Exception) {
                 false

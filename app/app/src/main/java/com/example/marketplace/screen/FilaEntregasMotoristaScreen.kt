@@ -1,6 +1,7 @@
 package com.example.marketplace.screen
 
 import android.content.Intent
+import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -23,8 +24,8 @@ import com.example.marketplace.controller.FilaEntregasViewModelFactory
 import com.example.marketplace.model.RastreioEntrega
 import com.example.marketplace.model.Usuario
 import com.example.marketplace.service.LocationTrackingService
-import com.example.marketplace.util.RequestLocationPermission
 import com.example.marketplace.util.hasLocationPermission
+import com.example.marketplace.util.hasPreciseLocationPermission
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -46,22 +47,24 @@ fun FilaEntregasMotoristaScreen(
     val uiState by viewModel.uiState.collectAsState()
 
     // Gerenciamento de permissões de localização
-    var hasLocationPermission by remember {
-        mutableStateOf(hasLocationPermission(context))
+    var temLocalizacaoPrecisa by remember {
+        mutableStateOf(hasPreciseLocationPermission(context))
     }
 
     val locationPermissionLauncher = rememberLauncherForActivityResult (
         contract = androidx.activity.result.contract.ActivityResultContracts.RequestMultiplePermissions()
     ) { permissions ->
-        hasLocationPermission = permissions[android.Manifest.permission.ACCESS_FINE_LOCATION] == true ||
-                permissions[android.Manifest.permission.ACCESS_COARSE_LOCATION] == true ||
-                hasLocationPermission(context)
+        temLocalizacaoPrecisa =
+            permissions[android.Manifest.permission.ACCESS_FINE_LOCATION] == true ||
+                hasPreciseLocationPermission(context)
+        if (!temLocalizacaoPrecisa && hasLocationPermission(context)) {
+            Toast.makeText(
+                context,
+                "Para detectar a cerca de 10 m, permita a localização precisa do motorista.",
+                Toast.LENGTH_LONG
+            ).show()
+        }
     }
-
-    RequestLocationPermission (
-        onPermissionGranted = { hasLocationPermission = true },
-        onPermissionDenied = { }
-    )
 
     Scaffold(
         topBar = {
@@ -107,6 +110,7 @@ fun FilaEntregasMotoristaScreen(
                     itemsIndexed(fila) { index, rastreio ->
                         FilaEntregaCard(
                             rastreio = rastreio,
+                            motoristaId = usuario.uid,
                             posicao = index + 1,
                             onMoverParaCima = if (index > 0) {
                                 { moverItem(viewModel, fila, index, index - 1) }
@@ -120,7 +124,7 @@ fun FilaEntregasMotoristaScreen(
                                 }
                             },
                             onIniciar = {
-                                if (!hasLocationPermission) {
+                                if (!temLocalizacaoPrecisa) {
                                     locationPermissionLauncher.launch(
                                         arrayOf(
                                             android.Manifest.permission.ACCESS_FINE_LOCATION,
@@ -200,6 +204,7 @@ private fun moverItem(
 @Composable
 fun FilaEntregaCard(
     rastreio: RastreioEntrega,
+    motoristaId: String,
     posicao: Int,
     onMoverParaCima: (() -> Unit)?,
     onMoverParaBaixo: (() -> Unit)?,
@@ -286,13 +291,13 @@ fun FilaEntregaCard(
                 }
 
                 if (rastreio.iniciadoEm == null) {
-                    Button(
-                        onClick = onIniciar,
-                        modifier = Modifier.height(32.dp),
-                        contentPadding = PaddingValues(horizontal = 8.dp)
-                    ) {
-                        Text("Iniciar", style = MaterialTheme.typography.labelSmall)
-                    }
+                    ConfirmarRetiradaButton(
+                        vendaId = rastreio.vendaId,
+                        motoristaId = motoristaId,
+                        textoBotao = "Coletar",
+                        modifier = Modifier.width(92.dp).height(32.dp),
+                        onConfirmado = onIniciar
+                    )
                 } else {
                     Button(
                         onClick = onFinalizar,

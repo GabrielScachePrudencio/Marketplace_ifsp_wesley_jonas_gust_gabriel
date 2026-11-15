@@ -12,6 +12,7 @@ import android.location.Location
 import android.os.Build
 import android.os.IBinder
 import android.os.Looper
+import android.os.SystemClock
 import android.util.Log
 import androidx.core.app.ActivityCompat
 import androidx.core.app.NotificationCompat
@@ -26,6 +27,7 @@ import com.google.android.gms.location.LocationServices
 import com.google.android.gms.location.Priority
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FirebaseFirestore
+import com.google.firebase.firestore.SetOptions
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -44,8 +46,10 @@ class LocationTrackingService : Service() {
 
         private const val CHANNEL_ID = "rastreio_entrega_channel"
         private const val NOTIFICATION_ID = 1001
-        private const val INTERVALO_ATUALIZACAO_MS = 5000L
-        const val RAIO_CERCA_METROS = 50f
+        private const val INTERVALO_ATUALIZACAO_MS = 3000L
+        val RAIO_CERCA_METROS: Float
+            get() = ProximidadeEntregaPolicy.raioMetros
+        private const val IDADE_MAXIMA_LOCALIZACAO_MS = 15000L
         private const val TAG = "LocationTracking"
 
         @Volatile
@@ -54,6 +58,9 @@ class LocationTrackingService : Service() {
 
         private val destinosCache = ConcurrentHashMap<String, Pair<Double, Double>>()
         private val proximidadeNotificadaMemory = ConcurrentHashMap.newKeySet<String>()
+        private val leiturasConsecutivasProximidade = ConcurrentHashMap<String, Int>()
+        private val ultimaLeituraProximidadeNanos = ConcurrentHashMap<String, Long>()
+        private val ultimoLogRejeicaoProximidade = ConcurrentHashMap<String, Long>()
         private val carregandoDestino = ConcurrentHashMap.newKeySet<String>()
         private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
@@ -61,12 +68,15 @@ class LocationTrackingService : Service() {
             if (vendaId.isBlank()) return
             destinosCache.remove(vendaId)
             proximidadeNotificadaMemory.remove(vendaId)
+            limparLeiturasProximidade(vendaId)
             carregandoDestino.remove(vendaId)
         }
 
         fun limparTodosCaches() {
             destinosCache.clear()
             proximidadeNotificadaMemory.clear()
+            leiturasConsecutivasProximidade.clear()
+            ultimaLeituraProximidadeNanos.clear()
             carregandoDestino.clear()
         }
 
@@ -80,20 +90,36 @@ class LocationTrackingService : Service() {
 
         fun verificarERegistrarProximidade(
             vendaId: String,
-            latitudeMotorista: Double,
-            longitudeMotorista: Double
+            localizacaoMotorista: Location
         ) {
             if (vendaId.isBlank() || proximidadeNotificadaMemory.contains(vendaId)) return
+            if (!localizacaoRecente(localizacaoMotorista)) {
+                limparLeiturasProximidade(vendaId)
+                logRejeicaoThrottled(
+                    vendaId,
+                    "Venda ${vendaId.take(8)}: leitura de GPS descartada por estar desatualizada."
+                )
+                return
+            }
             val destino = destinosCache[vendaId]
             if (destino == null) {
+                logRejeicaoThrottled(
+                    vendaId,
+                    "Venda ${vendaId.take(8)}: destino ainda não carregado, tentando resolver..."
+                )
                 carregarDestinoAssincrono(vendaId) { coord ->
                     if (coord != null) {
-                        checarDistanciaERegistrar(vendaId, latitudeMotorista, longitudeMotorista, coord)
+                        checarDistanciaERegistrar(vendaId, localizacaoMotorista, coord)
+                    } else {
+                        logRejeicaoThrottled(
+                            vendaId,
+                            "Venda ${vendaId.take(8)}: NÃO foi possível obter as coordenadas do destino."
+                        )
                     }
                 }
                 return
             }
-            checarDistanciaERegistrar(vendaId, latitudeMotorista, longitudeMotorista, destino)
+            checarDistanciaERegistrar(vendaId, localizacaoMotorista, destino)
         }
 
         private fun carregarDestinoAssincrono(
@@ -231,23 +257,107 @@ class LocationTrackingService : Service() {
             return lat in -90.0..90.0 && lng in -180.0..180.0 && (lat != 0.0 || lng != 0.0)
         }
 
+        private fun localizacaoRecente(localizacao: Location): Boolean {
+            val instanteFix = localizacao.elapsedRealtimeNanos
+            if (instanteFix <= 0L) return false
+            val idadeMs = (SystemClock.elapsedRealtimeNanos() - instanteFix) / 1_000_000L
+            return idadeMs in 0..IDADE_MAXIMA_LOCALIZACAO_MS
+        }
+
+        private fun limparLeiturasProximidade(vendaId: String) {
+            synchronized(leiturasConsecutivasProximidade) {
+                leiturasConsecutivasProximidade.remove(vendaId)
+                ultimaLeituraProximidadeNanos.remove(vendaId)
+            }
+        }
+
+        private fun logRejeicaoThrottled(vendaId: String, mensagem: String) {
+            val agora = System.currentTimeMillis()
+            val anterior = ultimoLogRejeicaoProximidade[vendaId] ?: 0L
+            if (agora - anterior >= 30_000L) {
+                ultimoLogRejeicaoProximidade[vendaId] = agora
+                LogNotificacoesEntrega.registrar("GPS Motorista", mensagem)
+            }
+        }
+
         private fun checarDistanciaERegistrar(
             vendaId: String,
-            latitudeMotorista: Double,
-            longitudeMotorista: Double,
+            localizacaoMotorista: Location,
             destino: Pair<Double, Double>
         ) {
             if (proximidadeNotificadaMemory.contains(vendaId)) return
+            if (
+                !localizacaoRecente(localizacaoMotorista) ||
+                !localizacaoMotorista.hasAccuracy() ||
+                !coordenadaValida(localizacaoMotorista.latitude, localizacaoMotorista.longitude)
+            ) {
+                limparLeiturasProximidade(vendaId)
+                logRejeicaoThrottled(
+                    vendaId,
+                    "Venda ${vendaId.take(8)}: GPS sem precisão disponível " +
+                        "(precisão=${if (localizacaoMotorista.hasAccuracy()) "${localizacaoMotorista.accuracy} m" else "indisponível"})."
+                )
+                return
+            }
+
             val (destinoLat, destinoLng) = destino
             val distancia = FloatArray(1)
             Location.distanceBetween(
-                latitudeMotorista,
-                longitudeMotorista,
+                localizacaoMotorista.latitude,
+                localizacaoMotorista.longitude,
                 destinoLat,
                 destinoLng,
                 distancia
             )
-            if (distancia[0] > RAIO_CERCA_METROS) return
+            LogNotificacoesEntrega.registrar(
+                "GPS Motorista",
+                "Venda ${vendaId.take(8)}: distância até o destino = " +
+                    "${String.format(java.util.Locale.getDefault(), "%.1f", distancia[0])} m " +
+                    "(precisão ±${String.format(java.util.Locale.getDefault(), "%.1f", localizacaoMotorista.accuracy)} m)."
+            )
+            if (!ProximidadeEntregaPolicy.amostraValida(distancia[0], localizacaoMotorista.accuracy)) {
+                limparLeiturasProximidade(vendaId)
+                logRejeicaoThrottled(
+                    vendaId,
+                    "Venda ${vendaId.take(8)}: amostra rejeitada — distância=" +
+                        "${String.format(java.util.Locale.getDefault(), "%.1f", distancia[0])} m " +
+                        "(raio=${ProximidadeEntregaPolicy.raioMetros.toInt()} m), " +
+                        "precisão=±${String.format(java.util.Locale.getDefault(), "%.1f", localizacaoMotorista.accuracy)} m " +
+                        "(máx=${ProximidadeEntregaPolicy.precisaoMaximaMetros().toInt()} m)."
+                )
+                return
+            }
+
+            val leiturasValidas = synchronized(leiturasConsecutivasProximidade) {
+                val instanteFix = localizacaoMotorista.elapsedRealtimeNanos
+                val fixAnterior = ultimaLeituraProximidadeNanos[vendaId]
+                if (fixAnterior != null && instanteFix <= fixAnterior) {
+                    return
+                }
+                ultimaLeituraProximidadeNanos[vendaId] = instanteFix
+                val leituras = (leiturasConsecutivasProximidade[vendaId] ?: 0) + 1
+                leiturasConsecutivasProximidade[vendaId] = leituras
+                leituras
+            }
+            if (!ProximidadeEntregaPolicy.podeNotificar(
+                    distancia[0],
+                    localizacaoMotorista.accuracy,
+                    leiturasValidas
+                )
+            ) {
+                LogNotificacoesEntrega.registrar(
+                    "GPS Motorista",
+                    "Venda ${vendaId.take(8)}: dentro do raio, aguardando leituras " +
+                        "($leiturasValidas de ${ProximidadeEntregaPolicy.LEITURAS_PARA_CONFIRMAR})."
+                )
+                return
+            }
+
+            LogNotificacoesEntrega.registrar(
+                "GPS Motorista",
+                "Venda ${vendaId.take(8)}: PROXIMIDADE CONFIRMADA no aparelho, " +
+                    "gravando flag no Firestore..."
+            )
 
             val motoristaId = FirebaseAuth.getInstance().currentUser?.uid
             if (motoristaId.isNullOrBlank()) {
@@ -280,9 +390,24 @@ class LocationTrackingService : Service() {
             }.addOnSuccessListener { registrada ->
                 if (registrada) {
                     proximidadeNotificadaMemory.add(vendaId)
+                    LogNotificacoesEntrega.registrar(
+                        "GPS Motorista",
+                        "Venda ${vendaId.take(8)}: flag proximidadeNotificada gravada no Firestore. " +
+                            "Comprador/vendedor serão avisados pelo monitor local."
+                    )
+                } else {
+                    LogNotificacoesEntrega.registrar(
+                        "GPS Motorista",
+                        "Venda ${vendaId.take(8)}: transação não gravou a flag " +
+                            "(status inativo, motorista divergente ou já notificada)."
+                    )
                 }
             }.addOnFailureListener { erro ->
                 Log.e(TAG, "Não foi possível registrar a entrada na cerca da venda $vendaId.", erro)
+                LogNotificacoesEntrega.registrar(
+                    "GPS Motorista",
+                    "Venda ${vendaId.take(8)}: ERRO ao gravar proximidade no Firestore: ${erro.message}"
+                )
             }
         }
     }
@@ -295,6 +420,7 @@ class LocationTrackingService : Service() {
 
     override fun onCreate() {
         super.onCreate()
+        ProximidadeEntregaPolicy.carregar(this)
         fusedLocationClient = LocationServices.getFusedLocationProviderClient(this)
         criarCanalNotificacao()
     }
@@ -393,14 +519,18 @@ class LocationTrackingService : Service() {
         val locationRequest = LocationRequest.Builder(
             prioridade,
             INTERVALO_ATUALIZACAO_MS
-        ).setMinUpdateIntervalMillis(3000L).build()
+        )
+            .setMinUpdateIntervalMillis(2000L)
+            .setMaxUpdateAgeMillis(3000L)
+            .setWaitForAccurateLocation(true)
+            .build()
 
         locationCallback = object : LocationCallback() {
             override fun onLocationResult(result: LocationResult) {
                 result.lastLocation?.let { location ->
                     vendasIdsAtivas.forEach { vendaId ->
-                        enviarLocalizacaoParaFirestore(vendaId, location.latitude, location.longitude)
-                        verificarERegistrarProximidade(vendaId, location.latitude, location.longitude)
+                        enviarLocalizacaoParaFirestore(vendaId, location)
+                        verificarERegistrarProximidade(vendaId, location)
                     }
                 }
             }
@@ -414,15 +544,26 @@ class LocationTrackingService : Service() {
         servicoAtivo = true
     }
 
-    private fun enviarLocalizacaoParaFirestore(vendaId: String, lat: Double, lng: Double) {
-        val dados = mapOf(
-            "latitude" to lat,
-            "longitude" to lng,
-            "timestamp" to System.currentTimeMillis()
+    private fun enviarLocalizacaoParaFirestore(vendaId: String, location: Location) {
+        val motoristaId = FirebaseAuth.getInstance().currentUser?.uid
+        if (motoristaId.isNullOrBlank()) {
+            Log.e(TAG, "Localização da venda $vendaId não enviada: motorista não autenticado.")
+            return
+        }
+        val dados = mutableMapOf<String, Any?>(
+            "latitude" to location.latitude,
+            "longitude" to location.longitude,
+            "precisaoMetros" to location.accuracy
+                .takeIf { location.hasAccuracy() }
+                ?.toDouble(),
+            "motoristaId" to motoristaId,
+            "timestamp" to (
+                location.time.takeIf { it > 0L } ?: System.currentTimeMillis()
+            )
         )
         firestore.collection("localizacoes_tempo_real")
             .document(vendaId)
-            .set(dados)
+            .set(dados, SetOptions.merge())
     }
 
     private fun pararAtualizacoes(limparNoServidor: Boolean = false) {

@@ -29,6 +29,7 @@ import com.google.android.gms.location.LocationServices
 import com.google.android.gms.location.Priority
 import com.google.android.gms.tasks.CancellationTokenSource
 import com.example.marketplace.controller.RastreamentoEntregaUiState
+import com.example.marketplace.controller.LocalizacaoMotorista
 import com.example.marketplace.controller.RastreamentoEntregaViewModel
 import com.example.marketplace.controller.RastreamentoEntregaViewModelFactory
 import com.example.marketplace.model.LocalizacaoMotoristaTracker
@@ -37,12 +38,14 @@ import com.example.marketplace.model.enums.StatusEntrega
 import com.example.marketplace.service.GeocodingService
 import com.example.marketplace.service.LocationTrackingService
 import com.example.marketplace.service.PontoRota
+import com.example.marketplace.service.ProximidadeEntregaPolicy
 import com.example.marketplace.service.Rota
 import com.example.marketplace.service.RoteamentoService
 import com.example.marketplace.util.MapaRastreamento
 import com.example.marketplace.util.MarcadorMapa
 import com.example.marketplace.util.TipoMarcador
 import com.example.marketplace.util.hasLocationPermission
+import com.example.marketplace.util.hasPreciseLocationPermission
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.tasks.await
 import java.io.File
@@ -71,13 +74,23 @@ fun RastreamentoEntregaScreen(
 
     val uiState by viewModel.uiState.collectAsState()
     val localizacaoMotorista by viewModel.localizacaoMotorista.collectAsState()
+    var raioCercaMetros by remember { mutableStateOf(ProximidadeEntregaPolicy.raioMetros) }
+
+    LaunchedEffect(Unit) {
+        ProximidadeEntregaPolicy.carregar(context)
+        raioCercaMetros = ProximidadeEntregaPolicy.raioMetros
+    }
     val comprovante by viewModel.comprovante.collectAsState()
+    val comprovanteRetirada by viewModel.comprovanteRetirada.collectAsState()
     val entregaEmAndamento by viewModel.entregaEmAndamento.collectAsState()
     val mensagemEntrega by viewModel.mensagemEntrega.collectAsState()
     val ehMotorista = usuario.perfil == "motorista"
     val scope = rememberCoroutineScope()
     var temPermissaoLocalizacao by remember {
         mutableStateOf(hasLocationPermission(context))
+    }
+    var temPermissaoLocalizacaoPrecisa by remember {
+        mutableStateOf(hasPreciseLocationPermission(context))
     }
     var erroCaptura by remember { mutableStateOf<String?>(null) }
     var fotoPendente by remember { mutableStateOf<Uri?>(null) }
@@ -89,7 +102,13 @@ fun RastreamentoEntregaScreen(
                 permissoes[android.Manifest.permission.ACCESS_COARSE_LOCATION] == true ||
                 hasLocationPermission(context)
         temPermissaoLocalizacao = concedida
-        if (!concedida) erroCaptura = "A permissão de localização é necessária para registrar o local da entrega."
+        temPermissaoLocalizacaoPrecisa =
+            permissoes[android.Manifest.permission.ACCESS_FINE_LOCATION] == true ||
+                hasPreciseLocationPermission(context)
+        if (!concedida) erroCaptura = "A permissão de localização é necessária para registrar a posição."
+        else if (!temPermissaoLocalizacaoPrecisa) {
+            erroCaptura = "A detecção do raio de 10 m exige localização precisa. Ative essa opção nas permissões do app."
+        }
     }
     val cameraLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.TakePicture()
@@ -173,11 +192,51 @@ fun RastreamentoEntregaScreen(
                     val pontoOrigem = estado.pontoOrigem
                     val comprador = estado.comprador
                     val usuarioDestino = if (ehMotorista) comprador else (comprador ?: usuario)
+                    val pedidoProntoParaRetirada =
+                        venda.statusEntrega == StatusEntrega.PRONTO_PARA_ENTREGA
                     // O motorista só aparece se o status for A_CAMINHO ou SAIU_PARA_ENTREGA.
                     val mostrarMotorista = venda.statusEntrega == StatusEntrega.A_CAMINHO ||
                             venda.statusEntrega == StatusEntrega.SAIU_PARA_ENTREGA
+                    var localizacaoMotoristaDispositivo by remember(venda.id) {
+                        mutableStateOf<LocalizacaoMotorista?>(null)
+                    }
 
-                    LaunchedEffect(venda.id, venda.status, temPermissaoLocalizacao) {
+                    LaunchedEffect(venda.id, pedidoProntoParaRetirada, temPermissaoLocalizacao) {
+                        if (!ehMotorista || !pedidoProntoParaRetirada) {
+                            localizacaoMotoristaDispositivo = null
+                            return@LaunchedEffect
+                        }
+                        if (!temPermissaoLocalizacao) {
+                            permissaoLocalizacaoLauncher.launch(
+                                arrayOf(
+                                    android.Manifest.permission.ACCESS_FINE_LOCATION,
+                                    android.Manifest.permission.ACCESS_COARSE_LOCATION
+                                )
+                            )
+                            return@LaunchedEffect
+                        }
+                        try {
+                            val localizacaoAtual = LocationServices.getFusedLocationProviderClient(context)
+                                .getCurrentLocation(
+                                    Priority.PRIORITY_HIGH_ACCURACY,
+                                    CancellationTokenSource().token
+                                ).await()
+                            localizacaoMotoristaDispositivo = localizacaoAtual?.let {
+                                LocalizacaoMotorista(it.latitude, it.longitude, System.currentTimeMillis())
+                            }
+                        } catch (e: kotlinx.coroutines.CancellationException) {
+                            throw e
+                        } catch (e: Exception) {
+                            erroCaptura = e.message ?: "Não foi possível obter a localização atual do motorista."
+                        }
+                    }
+
+                    LaunchedEffect(
+                        venda.id,
+                        venda.status,
+                        temPermissaoLocalizacao,
+                        temPermissaoLocalizacaoPrecisa
+                    ) {
                         if (ehMotorista && venda.motoristaId == usuario.uid) {
                             if (mostrarMotorista) {
                                 if (!temPermissaoLocalizacao) {
@@ -187,12 +246,20 @@ fun RastreamentoEntregaScreen(
                                             android.Manifest.permission.ACCESS_COARSE_LOCATION
                                         )
                                     )
-                                } else {
+                                } else if (temPermissaoLocalizacaoPrecisa) {
                                     androidx.core.content.ContextCompat.startForegroundService(
                                         context,
                                         Intent(context, LocationTrackingService::class.java).apply {
                                             action = LocationTrackingService.ACTION_START_TRACKING
                                             putExtra(LocationTrackingService.EXTRA_VENDA_ID, venda.id)
+                                        }
+                                    )
+                                } else if (LocationTrackingService.servicoAtivo) {
+                                    context.startService(
+                                        Intent(context, LocationTrackingService::class.java).apply {
+                                            action = LocationTrackingService.ACTION_REMOVE_VENDA
+                                            putExtra(LocationTrackingService.EXTRA_VENDA_ID, venda.id)
+                                            putExtra(LocationTrackingService.EXTRA_LIMPAR_SERVIDOR, true)
                                         }
                                     )
                                 }
@@ -215,11 +282,22 @@ fun RastreamentoEntregaScreen(
                     // Fallback local caso o ForegroundService ainda não esteja ativo
                     if (ehMotorista) {
                         val tracker = remember { LocalizacaoMotoristaTracker(context) }
-                        LaunchedEffect(venda.id, mostrarMotorista, temPermissaoLocalizacao) {
-                            if (mostrarMotorista && venda.motoristaId == usuario.uid && temPermissaoLocalizacao) {
+                        LaunchedEffect(
+                            venda.id,
+                            mostrarMotorista,
+                            temPermissaoLocalizacao,
+                            temPermissaoLocalizacaoPrecisa
+                        ) {
+                            if (
+                                mostrarMotorista &&
+                                venda.motoristaId == usuario.uid &&
+                                temPermissaoLocalizacao &&
+                                temPermissaoLocalizacaoPrecisa
+                            ) {
                                 tracker.iniciar(venda.id)
                             } else {
-                                val limparServidor = venda.motoristaId == usuario.uid && !mostrarMotorista
+                                val limparServidor = venda.motoristaId == usuario.uid &&
+                                    (!mostrarMotorista || !temPermissaoLocalizacaoPrecisa)
                                 tracker.pararSeAtivo(limparNoServidor = limparServidor)
                             }
                         }
@@ -241,7 +319,9 @@ fun RastreamentoEntregaScreen(
 
                     // Caso as coordenadas de destino não tenham sido salvas antes, geocodifica automaticamente
                     LaunchedEffect(rastreio?.destinoLat, rastreio?.destinoLng, usuarioDestino?.uid) {
-                        if (destinoLatBase == 0.0 || destinoLngBase == 0.0) {
+                        if (!pedidoProntoParaRetirada &&
+                            (destinoLatBase == 0.0 || destinoLngBase == 0.0)
+                        ) {
                             val coord = if (usuarioDestino != null && (usuarioDestino.rua.isNotBlank() || usuarioDestino.cidade.isNotBlank() || usuarioDestino.cep.isNotBlank())) {
                                 GeocodingService.buscarCoordenadas(
                                     rua = usuarioDestino.rua,
@@ -274,11 +354,24 @@ fun RastreamentoEntregaScreen(
 
                     val destinoLat = destinoLatBase
                     val destinoLng = destinoLngBase
+                    val destinoMapaLat = if (pedidoProntoParaRetirada) {
+                        pontoOrigem?.latitude?.takeIf { it != 0.0 } ?: 0.0
+                    } else destinoLat
+                    val destinoMapaLng = if (pedidoProntoParaRetirada) {
+                        pontoOrigem?.longitude?.takeIf { it != 0.0 } ?: 0.0
+                    } else destinoLng
+                    val localizacaoRotaMotorista = when {
+                        pedidoProntoParaRetirada -> localizacaoMotoristaDispositivo
+                        mostrarMotorista -> localizacaoMotorista
+                        else -> null
+                    }
+                    val localizacaoExibida = localizacaoRotaMotorista
 
                     // ================== ROTA ==================
                     var rota by remember { mutableStateOf<Rota?>(null) }
                     var ultimoPontoCalculado by remember { mutableStateOf<PontoRota?>(null) }
                     var ultimoModoMotorista by remember { mutableStateOf<Boolean?>(null) }
+                    var ultimoDestinoCalculado by remember { mutableStateOf<PontoRota?>(null) }
                     var ruaMotorista by remember(venda.id) { mutableStateOf("") }
                     var ultimaBuscaRuaEm by remember(venda.id) { mutableStateOf(0L) }
 
@@ -292,32 +385,55 @@ fun RastreamentoEntregaScreen(
                         ).orEmpty()
                     }
 
-                    LaunchedEffect(mostrarMotorista, localizacaoMotorista, pontoOrigem, destinoLat, destinoLng) {
-                        if (destinoLat == 0.0 || destinoLng == 0.0) return@LaunchedEffect
+                    LaunchedEffect(
+                        mostrarMotorista,
+                        pedidoProntoParaRetirada,
+                        localizacaoRotaMotorista,
+                        pontoOrigem,
+                        destinoMapaLat,
+                        destinoMapaLng
+                    ) {
+                        if (destinoMapaLat == 0.0 || destinoMapaLng == 0.0) {
+                            rota = null
+                            return@LaunchedEffect
+                        }
 
-                        val usandoMotorista = mostrarMotorista && localizacaoMotorista != null
+                        val usandoMotorista = localizacaoRotaMotorista != null &&
+                                (mostrarMotorista || (ehMotorista && pedidoProntoParaRetirada))
 
-                        // Em rota: motorista -> destino. Antes disso: loja -> destino (prévia).
+                        // Na retirada: motorista -> ponto de referência. Na entrega: motorista -> cliente.
                         val partida = if (usandoMotorista) {
-                            PontoRota(localizacaoMotorista!!.latitude, localizacaoMotorista!!.longitude)
+                            PontoRota(localizacaoRotaMotorista!!.latitude, localizacaoRotaMotorista.longitude)
+                        } else if (pedidoProntoParaRetirada) {
+                            rota = null
+                            return@LaunchedEffect
                         } else pontoOrigem?.let { PontoRota(it.latitude, it.longitude) }
                             ?: return@LaunchedEffect
+                        val destinoRota = PontoRota(destinoMapaLat, destinoMapaLng)
+                        if (ultimoDestinoCalculado != destinoRota || ultimoModoMotorista != usandoMotorista) {
+                            rota = null
+                        }
 
-                        // Só recalcula se mudou de modo (loja -> motorista) ou se o ponto de partida andou mais de 50 m
+                        // Recalcula se mudar a etapa/destino ou se o ponto de partida andar mais de 10 m.
                         val anterior = ultimoPontoCalculado
-                        if (anterior != null && rota != null && ultimoModoMotorista == usandoMotorista) {
+                        if (anterior != null && rota != null &&
+                            ultimoModoMotorista == usandoMotorista &&
+                            ultimoDestinoCalculado == destinoRota
+                        ) {
                             val d = FloatArray(1)
                             android.location.Location.distanceBetween(
                                 anterior.latitude, anterior.longitude,
                                 partida.latitude, partida.longitude, d
                             )
-                            if (d[0] < 50f) return@LaunchedEffect
+                            if (d[0] < 10f) return@LaunchedEffect
                         }
 
-                        RoteamentoService.buscarRota(listOf(partida, PontoRota(destinoLat, destinoLng)))?.let {
-                            rota = it
+                        val novaRota = RoteamentoService.buscarRota(listOf(partida, destinoRota))
+                        rota = novaRota
+                        if (novaRota != null) {
                             ultimoPontoCalculado = partida
                             ultimoModoMotorista = usandoMotorista
+                            ultimoDestinoCalculado = destinoRota
                         }
                     }
 
@@ -345,7 +461,7 @@ fun RastreamentoEntregaScreen(
                             )
                             if (venda.proximidadeNotificada && mostrarMotorista) {
                                 Text(
-                                    "📍 Entregador próximo! (a menos de 50 m do endereço)",
+                                    "📍 Entregador próximo! (a menos de ${raioCercaMetros.toInt()} m do endereço)",
                                     style = MaterialTheme.typography.bodyMedium,
                                     fontWeight = FontWeight.Bold,
                                     color = MaterialTheme.colorScheme.primary
@@ -359,6 +475,20 @@ fun RastreamentoEntregaScreen(
                                 "Quantidade: ${venda.quantidade}",
                                 style = MaterialTheme.typography.bodySmall
                             )
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.End
+                            ) {
+                                TextButton(
+                                    onClick = {
+                                        val novoRaio = ProximidadeEntregaPolicy.proximoRaio()
+                                        ProximidadeEntregaPolicy.definirRaio(context, novoRaio)
+                                        raioCercaMetros = novoRaio
+                                    }
+                                ) {
+                                    Text("Raio da cerca: ${raioCercaMetros.toInt()} m")
+                                }
+                            }
                         }
                     }
 
@@ -379,14 +509,14 @@ fun RastreamentoEntregaScreen(
                                     val chegada = java.text.SimpleDateFormat("HH:mm", java.util.Locale.getDefault())
                                         .format(java.util.Date(System.currentTimeMillis() + (r.duracaoSegundos * 1000).toLong()))
                                     Text(
-                                        if (mostrarMotorista) "Chega em ~${r.duracaoTexto}" else "Trajeto estimado: ~${r.duracaoTexto}",
+                                        if (mostrarMotorista) "Chega em ~${r.duracaoTexto}" else "Trajeto até a coleta: ~${r.duracaoTexto}",
                                         style = MaterialTheme.typography.headlineSmall,
                                         fontWeight = FontWeight.Bold,
                                         color = MaterialTheme.colorScheme.onPrimaryContainer
                                     )
                                     Text(
                                         if (mostrarMotorista) "${r.distanciaTexto} de distância • previsão ~$chegada"
-                                        else "${r.distanciaTexto} da loja até o cliente",
+                                        else "${r.distanciaTexto} até o ponto de referência",
                                         style = MaterialTheme.typography.bodyMedium,
                                         color = MaterialTheme.colorScheme.onPrimaryContainer
                                     )
@@ -408,7 +538,7 @@ fun RastreamentoEntregaScreen(
                             .height(320.dp)
                     ) {
                         MapaRastreamento(
-                            origem = pontoOrigem?.let {
+                            origem = if (pedidoProntoParaRetirada) null else pontoOrigem?.let {
                                 MarcadorMapa(
                                     latitude = it.latitude,
                                     longitude = it.longitude,
@@ -416,16 +546,18 @@ fun RastreamentoEntregaScreen(
                                     tipo = TipoMarcador.ORIGEM
                                 )
                             },
-                            destino = if (destinoLat != 0.0 && destinoLng != 0.0) {
+                            destino = if (destinoMapaLat != 0.0 && destinoMapaLng != 0.0) {
                                 MarcadorMapa(
-                                    latitude = destinoLat,
-                                    longitude = destinoLng,
-                                    titulo = "Destino",
+                                    latitude = destinoMapaLat,
+                                    longitude = destinoMapaLng,
+                                    titulo = if (pedidoProntoParaRetirada) {
+                                        "Ponto de coleta · ${pontoOrigem?.nome ?: "referência"}"
+                                    } else "Endereço de entrega",
                                     tipo = TipoMarcador.DESTINO
                                 )
                             } else null,
-                            motorista = if (mostrarMotorista) {
-                                localizacaoMotorista?.let {
+                            motorista = if (mostrarMotorista || (ehMotorista && pedidoProntoParaRetirada)) {
+                                localizacaoRotaMotorista?.let {
                                     MarcadorMapa(
                                         latitude = it.latitude,
                                         longitude = it.longitude,
@@ -437,15 +569,17 @@ fun RastreamentoEntregaScreen(
                                 }
                             } else null,
                             rota = rota,
-                            cercaVirtual = if (destinoLat != 0.0 && destinoLng != 0.0) {
+                            cercaVirtual = if (!pedidoProntoParaRetirada &&
+                                destinoMapaLat != 0.0 && destinoMapaLng != 0.0
+                            ) {
                                 MarcadorMapa(
-                                    latitude = destinoLat,
-                                    longitude = destinoLng,
-                                    titulo = "Cerca virtual · 50 m",
+                                    latitude = destinoMapaLat,
+                                    longitude = destinoMapaLng,
+                                    titulo = "Cerca virtual · ${raioCercaMetros.toInt()} m",
                                     tipo = TipoMarcador.DESTINO
                                 )
                             } else null,
-                            raioCercaMetros = 50.0
+                            raioCercaMetros = raioCercaMetros.toDouble()
                         )
                     }
 
@@ -563,6 +697,7 @@ fun RastreamentoEntregaScreen(
                     }
 
                     comprovante?.let { ComprovanteEntregaCard(it) }
+                    comprovanteRetirada?.let { ComprovanteRetiradaCard(it) }
 
                     // ================== LEGENDA DINÂMICA ==================
                     Row(
@@ -570,26 +705,32 @@ fun RastreamentoEntregaScreen(
                         horizontalArrangement = Arrangement.SpaceEvenly,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(
-                                imageVector = Icons.Default.Store,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.size(16.dp)
-                            )
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text("Origem", style = MaterialTheme.typography.labelSmall)
+                        if (!pedidoProntoParaRetirada) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(
+                                    imageVector = Icons.Default.Store,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text("Origem", style = MaterialTheme.typography.labelSmall)
+                            }
                         }
 
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Icon(
-                                imageVector = Icons.Default.Home,
+                                imageVector = if (pedidoProntoParaRetirada) Icons.Default.Store else Icons.Default.Home,
                                 contentDescription = null,
-                                tint = MaterialTheme.colorScheme.error,
+                                tint = if (pedidoProntoParaRetirada) MaterialTheme.colorScheme.primary
+                                else MaterialTheme.colorScheme.error,
                                 modifier = Modifier.size(16.dp)
                             )
                             Spacer(modifier = Modifier.width(4.dp))
-                            Text("Destino", style = MaterialTheme.typography.labelSmall)
+                            Text(
+                                if (pedidoProntoParaRetirada) "Ponto de retirada" else "Destino",
+                                style = MaterialTheme.typography.labelSmall
+                            )
                         }
 
                         if (mostrarMotorista) {
@@ -607,9 +748,10 @@ fun RastreamentoEntregaScreen(
                     }
 
                     // Texto de última atualização
-                    if (localizacaoMotorista == null) {
+                    if (localizacaoExibida == null) {
                         Text(
-                            if (ehMotorista && !mostrarMotorista) "Inicie a entrega para ativar o rastreamento por GPS em tempo real."
+                            if (ehMotorista && pedidoProntoParaRetirada) "Aguardando a localização atual para traçar a rota até a retirada."
+                            else if (ehMotorista && !mostrarMotorista) "Inicie a entrega para ativar o rastreamento por GPS em tempo real."
                             else "Aguardando localização do motorista...",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -618,7 +760,7 @@ fun RastreamentoEntregaScreen(
                         Text(
                             "Última atualização: ${
                                 java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.getDefault())
-                                    .format(java.util.Date(localizacaoMotorista!!.timestamp))
+                                    .format(java.util.Date(localizacaoExibida.timestamp))
                             }",
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -630,7 +772,9 @@ fun RastreamentoEntregaScreen(
                         Card(
                             modifier = Modifier.fillMaxWidth(),
                             colors = CardDefaults.cardColors(
-                                containerColor = MaterialTheme.colorScheme.surfaceVariant
+                                containerColor = if (pedidoProntoParaRetirada) {
+                                    MaterialTheme.colorScheme.primaryContainer
+                                } else MaterialTheme.colorScheme.surfaceVariant
                             )
                         ) {
                             Row(
@@ -646,7 +790,8 @@ fun RastreamentoEntregaScreen(
                                 Spacer(modifier = Modifier.width(16.dp))
                                 Column {
                                     Text(
-                                        "PONTO DE ORIGEM",
+                                        if (pedidoProntoParaRetirada) "PONTO DE REFERÊNCIA PARA RETIRADA"
+                                        else "PONTO DE ORIGEM",
                                         style = MaterialTheme.typography.labelMedium,
                                         color = MaterialTheme.colorScheme.primary,
                                         fontWeight = FontWeight.Bold
@@ -682,41 +827,55 @@ fun RastreamentoEntregaScreen(
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Icon(
-                                imageVector = Icons.Default.Home,
-                                contentDescription = "Destino",
-                                tint = MaterialTheme.colorScheme.error,
+                                imageVector = if (pedidoProntoParaRetirada) Icons.Default.Store else Icons.Default.Home,
+                                contentDescription = if (pedidoProntoParaRetirada) "Ponto de retirada" else "Destino",
+                                tint = if (pedidoProntoParaRetirada) MaterialTheme.colorScheme.primary
+                                else MaterialTheme.colorScheme.error,
                                 modifier = Modifier.size(36.dp)
                             )
                             Spacer(modifier = Modifier.width(16.dp))
                             Column {
                                 Text(
-                                    "ENDEREÇO DE ENTREGA",
+                                    if (pedidoProntoParaRetirada) "PONTO DE COLETA / REFERÊNCIA"
+                                    else "ENDEREÇO DE ENTREGA",
                                     style = MaterialTheme.typography.labelMedium,
-                                    color = MaterialTheme.colorScheme.error,
+                                    color = if (pedidoProntoParaRetirada) {
+                                        MaterialTheme.colorScheme.primary
+                                    } else MaterialTheme.colorScheme.error,
                                     fontWeight = FontWeight.Bold
                                 )
 
-                                val nomeCliente = venda.compradorNome.ifBlank { comprador?.nome ?: "" }
-                                if ((ehMotorista || usuario.perfil == "negociador") && nomeCliente.isNotBlank()) {
+                                if (pedidoProntoParaRetirada) {
                                     Text(
-                                        "Cliente: $nomeCliente",
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        pontoOrigem?.let {
+                                            "${it.nome}\n${it.rua}, ${it.numero}\n${it.cidade} - ${it.estado}"
+                                        } ?: "Carregando os dados do ponto de referência...",
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                } else {
+                                    val nomeCliente = venda.compradorNome.ifBlank { comprador?.nome ?: "" }
+                                    if ((ehMotorista || usuario.perfil == "negociador") && nomeCliente.isNotBlank()) {
+                                        Text(
+                                            "Cliente: $nomeCliente",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
+
+                                    val enderecoDestino = when {
+                                        !rastreio?.enderecoDestinoTexto.isNullOrBlank() -> rastreio!!.enderecoDestinoTexto
+                                        usuarioDestino != null && usuarioDestino.rua.isNotBlank() ->
+                                            "${usuarioDestino.rua}, ${usuarioDestino.numero} - ${usuarioDestino.cidade}/${usuarioDestino.estado}"
+                                        else -> "Endereço será configurado quando o pedido estiver pronto para entrega."
+                                    }
+
+                                    Text(
+                                        enderecoDestino,
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        fontWeight = FontWeight.Bold
                                     )
                                 }
-
-                                val enderecoDestino = when {
-                                    !rastreio?.enderecoDestinoTexto.isNullOrBlank() -> rastreio!!.enderecoDestinoTexto
-                                    usuarioDestino != null && usuarioDestino.rua.isNotBlank() ->
-                                        "${usuarioDestino.rua}, ${usuarioDestino.numero} - ${usuarioDestino.cidade}/${usuarioDestino.estado}"
-                                    else -> "Endereço será configurado quando o pedido estiver pronto para entrega."
-                                }
-
-                                Text(
-                                    enderecoDestino,
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    fontWeight = FontWeight.Bold
-                                )
                             }
                         }
                     }
@@ -769,8 +928,12 @@ fun RastreamentoEntregaScreen(
                                 )
                             ) {
                                 Text(
-                                    if (ehMotorista) "Pedido pronto para coleta no ponto de origem acima."
-                                    else "Seu pedido está pronto e aguardando o motorista.",
+                                    if (ehMotorista) {
+                                        "Pedido pronto para retirada no ponto de referência destacado no mapa. " +
+                                                "A rota parte da sua localização atual."
+                                    } else {
+                                        "Seu pedido está pronto no ponto de referência destacado no mapa e aguardando o motorista."
+                                    },
                                     modifier = Modifier.padding(16.dp),
                                     style = MaterialTheme.typography.bodyMedium
                                 )
@@ -823,6 +986,15 @@ fun RastreamentoEntregaScreen(
                                     style = MaterialTheme.typography.bodyMedium
                                 )
                             }
+                        }
+                    }
+                    if (ehMotorista && pedidoProntoParaRetirada) {
+                        erroCaptura?.let { mensagem ->
+                            Text(
+                                mensagem,
+                                color = MaterialTheme.colorScheme.error,
+                                style = MaterialTheme.typography.bodySmall
+                            )
                         }
                     }
                 }

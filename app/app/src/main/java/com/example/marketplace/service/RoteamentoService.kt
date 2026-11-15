@@ -62,7 +62,7 @@ object RoteamentoService {
                 val par = coordenadas.getJSONArray(i)
                 PontoRota(latitude = par.getDouble(1), longitude = par.getDouble(0)) // GeoJSON = [lng, lat]
             }
-            val etapas = buildList {
+            val etapas = buildList<EtapaRota> {
                 val legs = rota.getJSONArray("legs")
                 for (legIndex in 0 until legs.length()) {
                     val steps = legs.getJSONObject(legIndex).getJSONArray("steps")

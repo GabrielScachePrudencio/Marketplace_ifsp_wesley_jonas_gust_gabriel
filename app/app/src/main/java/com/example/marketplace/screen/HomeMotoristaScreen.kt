@@ -2,6 +2,7 @@ package com.example.marketplace.screen
 
 import android.content.pm.PackageManager
 import android.net.Uri
+import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
@@ -51,6 +52,7 @@ import com.example.marketplace.util.AvatarUsuario
 import com.example.marketplace.util.CampoBusca
 import com.example.marketplace.util.correspondeBusca
 import com.example.marketplace.util.hasLocationPermission
+import com.example.marketplace.util.hasPreciseLocationPermission
 import com.example.marketplace.util.ImageUtils
 import com.example.marketplace.model.enums.StatusEntrega
 import com.example.marketplace.model.Usuario
@@ -202,15 +204,21 @@ fun HomeMotoristaScreen(
     val tracker = remember { LocalizacaoMotoristaTracker(context) }
 
     var permissaoConcedida by remember {
-        mutableStateOf(hasLocationPermission(context))
+        mutableStateOf(hasPreciseLocationPermission(context))
     }
 
     val permissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestMultiplePermissions()
     ) { permissoes ->
         permissaoConcedida = permissoes[android.Manifest.permission.ACCESS_FINE_LOCATION] == true ||
-                permissoes[android.Manifest.permission.ACCESS_COARSE_LOCATION] == true ||
-                hasLocationPermission(context)
+                hasPreciseLocationPermission(context)
+        if (!permissaoConcedida && hasLocationPermission(context)) {
+            Toast.makeText(
+                context,
+                "Para detectar a cerca de 10 m, permita a localização precisa do motorista.",
+                Toast.LENGTH_LONG
+            ).show()
+        }
     }
 
     LaunchedEffect(Unit) {
@@ -1011,15 +1019,14 @@ private fun MotoristaEntregaCard(
                             }
                         }
 
-                        Button(
-                            onClick = {
-                                onAtualizarStatus(StatusEntrega.A_CAMINHO.name, veiculoSelecionado?.id)
-                            },
+                        ConfirmarRetiradaButton(
+                            vendaId = venda.id,
+                            motoristaId = usuario.uid,
                             enabled = veiculoSelecionado != null,
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Text("Coletar e Iniciar Entrega (A caminho)")
-                        }
+                            onConfirmado = {
+                                onAtualizarStatus(StatusEntrega.A_CAMINHO.name, veiculoSelecionado?.id)
+                            }
+                        )
                     }
                 }
 

@@ -7,6 +7,7 @@ import com.example.marketplace.data.local.AppDatabase
 import com.example.marketplace.repository.PontoReferenciaRepository
 import com.example.marketplace.repository.RastreioEntregaRepository
 import com.example.marketplace.repository.ComprovanteEntregaRepository
+import com.example.marketplace.repository.ComprovanteRetiradaRepository
 import com.example.marketplace.repository.UsuarioRepository
 import com.example.marketplace.repository.VendaRepository
 
@@ -16,12 +17,14 @@ class RastreamentoEntregaViewModelFactory(
 
     override fun <T : ViewModel> create(modelClass: Class<T>): T {
         val db = AppDatabase.getDatabase(context)
+        val comprovanteRetiradaRepository = ComprovanteRetiradaRepository(context)
 
         val vendaRepository = VendaRepository(
             db.vendaDao(),
             db.pendenteSycronizacaoDao(),
             com.example.marketplace.repository.ProdutoRepository(db.produtoDao(), db.pendenteSycronizacaoDao()),
-            RastreioEntregaRepository(db.rastreioEntregaDao(), db.pendenteSycronizacaoDao())
+            RastreioEntregaRepository(db.rastreioEntregaDao(), db.pendenteSycronizacaoDao()),
+            comprovanteRetiradaRepository
         )
 
         val rastreioEntregaRepository = RastreioEntregaRepository(
@@ -45,7 +48,8 @@ class RastreamentoEntregaViewModelFactory(
             rastreioEntregaRepository,
             pontoReferenciaRepository,
             usuarioRepository,
-            ComprovanteEntregaRepository(context)
+            ComprovanteEntregaRepository(context),
+            comprovanteRetiradaRepository
         ) as T
     }
 }

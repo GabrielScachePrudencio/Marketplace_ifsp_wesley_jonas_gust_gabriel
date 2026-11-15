@@ -13,7 +13,9 @@ import com.example.marketplace.model.Usuario
 import com.example.marketplace.model.Venda
 import com.example.marketplace.model.enums.StatusEntrega
 import com.example.marketplace.model.ComprovanteEntrega
+import com.example.marketplace.model.ComprovanteRetirada
 import com.example.marketplace.repository.ComprovanteEntregaRepository
+import com.example.marketplace.repository.ComprovanteRetiradaRepository
 import com.google.firebase.firestore.ListenerRegistration
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -37,7 +39,20 @@ sealed class RastreamentoEntregaUiState {
 data class LocalizacaoMotorista(
     val latitude: Double,
     val longitude: Double,
-    val timestamp: Long
+    val timestamp: Long,
+    val precisaoMetros: Double? = null
+)
+
+data class DiagnosticoEntrega(
+    val proximidadeStatus: String? = null,
+    val distanciaMetros: Double? = null,
+    val precisaoMetros: Double? = null,
+    val leiturasValidas: Long? = null,
+    val atualizadoEm: Long? = null,
+    val inicioNotificacaoStatus: String? = null,
+    val inicioNotificacaoSucessos: Long? = null,
+    val proximidadeNotificacaoStatus: String? = null,
+    val proximidadeNotificacaoSucessos: Long? = null
 )
 
 class RastreamentoEntregaViewModel(
@@ -45,7 +60,8 @@ class RastreamentoEntregaViewModel(
     private val rastreioEntregaRepository: RastreioEntregaRepository,
     private val pontoReferenciaRepository: PontoReferenciaRepository,
     private val usuarioRepository: UsuarioRepository? = null,
-    private val comprovanteEntregaRepository: ComprovanteEntregaRepository
+    private val comprovanteEntregaRepository: ComprovanteEntregaRepository,
+    private val comprovanteRetiradaRepository: ComprovanteRetiradaRepository
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow<RastreamentoEntregaUiState>(RastreamentoEntregaUiState.Idle)
@@ -54,8 +70,14 @@ class RastreamentoEntregaViewModel(
     private val _localizacaoMotorista = MutableStateFlow<LocalizacaoMotorista?>(null)
     val localizacaoMotorista: StateFlow<LocalizacaoMotorista?> = _localizacaoMotorista.asStateFlow()
 
+    private val _diagnosticoEntrega = MutableStateFlow<DiagnosticoEntrega?>(null)
+    val diagnosticoEntrega: StateFlow<DiagnosticoEntrega?> = _diagnosticoEntrega.asStateFlow()
+
     private val _comprovante = MutableStateFlow<ComprovanteEntrega?>(null)
     val comprovante: StateFlow<ComprovanteEntrega?> = _comprovante.asStateFlow()
+
+    private val _comprovanteRetirada = MutableStateFlow<ComprovanteRetirada?>(null)
+    val comprovanteRetirada: StateFlow<ComprovanteRetirada?> = _comprovanteRetirada.asStateFlow()
 
     private val _entregaEmAndamento = MutableStateFlow(false)
     val entregaEmAndamento: StateFlow<Boolean> = _entregaEmAndamento.asStateFlow()
@@ -64,13 +86,18 @@ class RastreamentoEntregaViewModel(
     val mensagemEntrega: StateFlow<String?> = _mensagemEntrega.asStateFlow()
 
     private var listenerLocalizacao: ListenerRegistration? = null
+    private var listenerDiagnostico: ListenerRegistration? = null
     private var observacaoJob: Job? = null
     private var comprovanteJob: Job? = null
+    private var comprovanteRetiradaJob: Job? = null
 
     fun carregarRastreamento(vendaId: String) {
         observacaoJob?.cancel()
         comprovanteJob?.cancel()
+        comprovanteRetiradaJob?.cancel()
+        escutarDiagnosticoEntrega(vendaId)
         _comprovante.value = null
+        _comprovanteRetirada.value = null
         comprovanteJob = viewModelScope.launch {
             try {
                 comprovanteEntregaRepository.observarPorVenda(vendaId).collect {
@@ -80,6 +107,17 @@ class RastreamentoEntregaViewModel(
                 throw e
             } catch (e: Exception) {
                 _mensagemEntrega.value = e.message ?: "Não foi possível carregar o comprovante."
+            }
+        }
+        comprovanteRetiradaJob = viewModelScope.launch {
+            try {
+                comprovanteRetiradaRepository.observarPorVenda(vendaId).collect {
+                    _comprovanteRetirada.value = it
+                }
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                _mensagemEntrega.value = e.message ?: "Não foi possível carregar o comprovante de retirada."
             }
         }
         observacaoJob = viewModelScope.launch {
@@ -208,10 +246,15 @@ class RastreamentoEntregaViewModel(
                     val lat = snapshot?.getDouble("latitude")
                     val lng = snapshot?.getDouble("longitude")
                     val timestamp = snapshot?.getLong("timestamp")
+                    val precisao = (snapshot?.get("precisaoMetros") as? Number)?.toDouble()
 
                     if (lat != null && lng != null && timestamp != null) {
-                        android.util.Log.d("Rastreamento", "Localização recebida: lat=$lat, lng=$lng")
-                        _localizacaoMotorista.value = LocalizacaoMotorista(lat, lng, timestamp)
+                        android.util.Log.d(
+                            "Rastreamento",
+                            "Localização recebida: lat=$lat, lng=$lng, precisão=${precisao ?: "indisponível"}"
+                        )
+                        _localizacaoMotorista.value =
+                            LocalizacaoMotorista(lat, lng, timestamp, precisao)
                     } else {
                         android.util.Log.d("Rastreamento", "Localização ainda não disponível")
                         _localizacaoMotorista.value = null
@@ -222,14 +265,56 @@ class RastreamentoEntregaViewModel(
         }
     }
 
+    private fun escutarDiagnosticoEntrega(vendaId: String) {
+        listenerDiagnostico?.remove()
+        _diagnosticoEntrega.value = null
+        listenerDiagnostico = com.google.firebase.firestore.FirebaseFirestore.getInstance()
+            .collection("vendas")
+            .document(vendaId)
+            .addSnapshotListener { snapshot, erro ->
+                if (erro != null) {
+                    android.util.Log.e(
+                        "Rastreamento",
+                        "Erro ao escutar diagnóstico da entrega: ${erro.message}",
+                        erro
+                    )
+                    return@addSnapshotListener
+                }
+                if (snapshot == null || !snapshot.exists()) {
+                    _diagnosticoEntrega.value = null
+                    return@addSnapshotListener
+                }
+
+                fun number(field: String): Number? = snapshot.get(field) as? Number
+
+                _diagnosticoEntrega.value = DiagnosticoEntrega(
+                    proximidadeStatus = snapshot.getString("proximidadeDiagnostico"),
+                    distanciaMetros = number("proximidadeDistanciaMetros")?.toDouble(),
+                    precisaoMetros = number("proximidadePrecisaoMetros")?.toDouble(),
+                    leiturasValidas = number("proximidadeLeiturasValidas")?.toLong(),
+                    atualizadoEm = number("proximidadeDiagnosticoEm")?.toLong(),
+                    inicioNotificacaoStatus = snapshot.getString("notificacaoInicioStatus"),
+                    inicioNotificacaoSucessos = number("notificacaoInicioSucessos")?.toLong(),
+                    proximidadeNotificacaoStatus = snapshot.getString("proximidadeNotificacaoStatus"),
+                    proximidadeNotificacaoSucessos =
+                        number("proximidadeNotificacaoSucessos")?.toLong()
+                )
+            }
+    }
+
     fun pararEscutaLocalizacao() {
         listenerLocalizacao?.remove()
         listenerLocalizacao = null
+        listenerDiagnostico?.remove()
+        listenerDiagnostico = null
         observacaoJob?.cancel()
         observacaoJob = null
         comprovanteJob?.cancel()
         comprovanteJob = null
+        comprovanteRetiradaJob?.cancel()
+        comprovanteRetiradaJob = null
         _localizacaoMotorista.value = null
+        _diagnosticoEntrega.value = null
     }
 
     fun resetar() {

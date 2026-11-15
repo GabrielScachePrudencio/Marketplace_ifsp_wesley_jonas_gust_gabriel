@@ -22,6 +22,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
+import com.example.marketplace.service.ProximidadeEntregaPolicy
 import com.example.marketplace.service.Rota
 import org.osmdroid.util.BoundingBox
 import org.osmdroid.util.GeoPoint
@@ -44,6 +45,7 @@ private class EstadoCamera {
     var etapaEnquadrada = 0          // 0 = nada, 1 = sem motorista, 2 = com motorista
     var usuarioMexeu = false         // true depois que o usuário tocar no mapa
     var ultimoPedidoManual = 0
+    var destinoEnquadrado: Pair<Double, Double>? = null
 }
 
 @SuppressLint("ClickableViewAccessibility")
@@ -55,7 +57,7 @@ fun MapaRastreamento(
     modifier: Modifier = Modifier,
     rota: Rota? = null,
     cercaVirtual: MarcadorMapa? = null,
-    raioCercaMetros: Double = 50.0,
+    raioCercaMetros: Double = ProximidadeEntregaPolicy.raioMetros.toDouble(),
     corRota: Int = 0xFF1A73E8.toInt()
 ) {
     val context = LocalContext.current
@@ -175,13 +177,17 @@ fun MapaRastreamento(
             else -> 0
         }
 
+        val destinoAtual = pDestino?.let { it.latitude to it.longitude }
         val pediuManual = pedidoManual != camera.ultimoPedidoManual
         val deveEnquadrar = pontosEnquadrar.isNotEmpty() && (
-                pediuManual || (!camera.usuarioMexeu && etapaAtual > camera.etapaEnquadrada)
+                pediuManual ||
+                        (!camera.usuarioMexeu &&
+                                (etapaAtual > camera.etapaEnquadrada || destinoAtual != camera.destinoEnquadrado))
                 )
 
         if (deveEnquadrar) {
             camera.etapaEnquadrada = etapaAtual
+            camera.destinoEnquadrado = destinoAtual
             camera.ultimoPedidoManual = pedidoManual
             if (pediuManual) camera.usuarioMexeu = false
 

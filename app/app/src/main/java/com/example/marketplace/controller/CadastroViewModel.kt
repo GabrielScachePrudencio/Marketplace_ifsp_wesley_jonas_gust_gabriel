@@ -86,15 +86,22 @@ class CadastroViewModel(
             return
         }
 
-        if (
-            rua.isBlank() ||
-            numero.isBlank() ||
-            cidade.isBlank() ||
-            estado.isBlank() ||
-            cep.isBlank()
-        ) {
+        val coordenadasValidas = latitude != null &&
+                longitude != null &&
+                latitude.isFinite() &&
+                longitude.isFinite() &&
+                latitude in -90.0..90.0 &&
+                longitude in -180.0..180.0 &&
+                (latitude != 0.0 || longitude != 0.0)
+        val enderecoCompleto = rua.isNotBlank() &&
+                numero.isNotBlank() &&
+                cidade.isNotBlank() &&
+                estado.isNotBlank() &&
+                cep.isNotBlank()
+
+        if (!enderecoCompleto && !coordenadasValidas) {
             _uiState.value =
-                CadastroUiState.Erro("Preencha o endereço completo")
+                CadastroUiState.Erro("Preencha o endereço ou selecione sua localização atual")
             return
         }
 
@@ -103,9 +110,9 @@ class CadastroViewModel(
             _uiState.value = CadastroUiState.Loading
 
             try {
-                var latFinal = latitude
-                var lngFinal = longitude
-                if (latFinal == null || lngFinal == null || (latFinal == 0.0 && lngFinal == 0.0)) {
+                var latFinal = latitude.takeIf { coordenadasValidas }
+                var lngFinal = longitude.takeIf { coordenadasValidas }
+                if (!coordenadasValidas) {
                     val coord = com.example.marketplace.service.GeocodingService.buscarCoordenadas(
                         rua = rua,
                         numero = numero,

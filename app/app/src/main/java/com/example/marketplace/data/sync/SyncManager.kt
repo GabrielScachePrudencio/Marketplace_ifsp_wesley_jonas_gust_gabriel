@@ -77,7 +77,7 @@ class SyncManager(
                             "videoPartes" to produto.videoPartes,
                             "dataCriacao" to FirestoreDateConverter.paraMillis(produto.dataCriacao)
                         )
-                        colecao.document(item.id).set(dados).await()
+                        colecao.document(item.id).set(dados, SetOptions.merge()).await()
                     }
                     OperacaoPendente.DELETE -> {
                         colecao.document(item.id).delete().await()

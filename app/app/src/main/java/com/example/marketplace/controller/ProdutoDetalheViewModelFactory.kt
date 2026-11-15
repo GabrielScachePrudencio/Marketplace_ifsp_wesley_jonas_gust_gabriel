@@ -6,6 +6,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import com.example.marketplace.data.local.AppDatabase
 import com.example.marketplace.repository.AvaliacaoProdutoRepository
+import com.example.marketplace.repository.ComprovanteRetiradaRepository
 import com.example.marketplace.repository.ProdutoRepository
 import com.example.marketplace.repository.RastreioEntregaRepository
 import com.example.marketplace.repository.VendaRepository
@@ -16,7 +17,8 @@ class ProdutoDetalheViewModelFactory(private val context: Context) : ViewModelPr
         val produtoRepository = ProdutoRepository(db.produtoDao(), db.pendenteSycronizacaoDao())
         val rastreioEntregaRepository = RastreioEntregaRepository(db.rastreioEntregaDao(), db.pendenteSycronizacaoDao())
         val vendaRepository = VendaRepository(db.vendaDao(),
-            db.pendenteSycronizacaoDao(), produtoRepository, rastreioEntregaRepository)
+            db.pendenteSycronizacaoDao(), produtoRepository, rastreioEntregaRepository,
+            ComprovanteRetiradaRepository(context))
         val avaliacaoRepository = AvaliacaoProdutoRepository(db.avaliacaoProdutoDao(),
             db.pendenteSycronizacaoDao())
 

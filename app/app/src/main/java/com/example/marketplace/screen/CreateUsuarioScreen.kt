@@ -1,6 +1,8 @@
 package com.example.marketplace.screen
 
+import android.Manifest
 import android.net.Uri
+import android.util.Log
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
@@ -11,6 +13,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CameraAlt
+import androidx.compose.material.icons.filled.MyLocation
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -26,8 +29,14 @@ import com.example.marketplace.controller.CadastroViewModelFactory
 import com.example.marketplace.service.GeocodingService
 import com.example.marketplace.util.AvatarUsuario
 import com.example.marketplace.util.ImageUtils
+import com.example.marketplace.util.hasLocationPermission
+import com.google.android.gms.location.LocationServices
+import com.google.android.gms.location.Priority
+import com.google.android.gms.tasks.CancellationTokenSource
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.tasks.await
 import java.util.Locale
 
 private val PERFIS = listOf("comprador", "motorista", "negociador")
@@ -63,7 +72,95 @@ fun CreateUsuarioScreen(
     val escopo = rememberCoroutineScope()
     var buscandoCep by remember { mutableStateOf(false) }
     var buscandoCoordenadas by remember { mutableStateOf(false) }
+    var buscandoLocalizacao by remember { mutableStateOf(false) }
     var mensagemCep by remember { mutableStateOf<String?>(null) }
+    var mensagemLocalizacao by remember { mutableStateOf<String?>(null) }
+    var mensagemLocalizacaoPositiva by remember { mutableStateOf(false) }
+    var enderecoUsandoLocalizacao by remember { mutableStateOf(false) }
+    val locationClient = remember(context) {
+        LocationServices.getFusedLocationProviderClient(context)
+    }
+
+    fun marcarEnderecoEditadoManualmente() {
+        if (enderecoUsandoLocalizacao) {
+            enderecoUsandoLocalizacao = false
+            latitude = ""
+            longitude = ""
+        }
+        mensagemLocalizacao = null
+    }
+
+    fun buscarLocalizacaoAtual() {
+        escopo.launch {
+            buscandoLocalizacao = true
+            mensagemLocalizacao = null
+            mensagemLocalizacaoPositiva = false
+            try {
+                if (!hasLocationPermission(context)) {
+                    mensagemLocalizacao = "Permita o acesso à localização para preencher o endereço."
+                    return@launch
+                }
+
+                val localizacao = locationClient.getCurrentLocation(
+                    Priority.PRIORITY_HIGH_ACCURACY,
+                    CancellationTokenSource().token
+                ).await()
+                if (localizacao == null) {
+                    mensagemLocalizacao = "Não foi possível obter sua localização. Ative o GPS e tente novamente."
+                    return@launch
+                }
+
+                latitude = String.format(Locale.US, "%.6f", localizacao.latitude)
+                longitude = String.format(Locale.US, "%.6f", localizacao.longitude)
+                val endereco = GeocodingService.buscarEnderecoPorCoordenadas(
+                    latitude = localizacao.latitude,
+                    longitude = localizacao.longitude
+                )
+
+                enderecoUsandoLocalizacao = true
+                mensagemCep = null
+                rua = endereco?.rua?.ifBlank { "Localização atual" } ?: "Localização atual"
+                numero = endereco?.numero?.ifBlank { "S/N" } ?: "S/N"
+                cidade = endereco?.cidade.orEmpty()
+                estado = endereco?.estado.orEmpty()
+                cep = endereco?.cep?.filter { it.isDigit() }?.take(8).orEmpty()
+                mensagemLocalizacaoPositiva = true
+                mensagemLocalizacao = if (
+                    endereco == null ||
+                    endereco.rua.isBlank() ||
+                    endereco.numero.isBlank() ||
+                    endereco.cidade.isBlank() ||
+                    endereco.estado.isBlank() ||
+                    endereco.cep.isBlank()
+                ) {
+                    "Localização obtida. Alguns dados do endereço não foram encontrados; confira antes de cadastrar."
+                } else {
+                    "Endereço preenchido pela localização atual. Confira os dados antes de cadastrar."
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Log.e("CadastroUsuario", "Não foi possível preencher o endereço pela localização.", e)
+                mensagemLocalizacao = "Não foi possível obter o endereço. Verifique a localização e a conexão e tente novamente."
+            } finally {
+                buscandoLocalizacao = false
+            }
+        }
+    }
+
+    val locationPermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions()
+    ) { permissoes ->
+        val concedida = permissoes[Manifest.permission.ACCESS_FINE_LOCATION] == true ||
+                permissoes[Manifest.permission.ACCESS_COARSE_LOCATION] == true ||
+                hasLocationPermission(context)
+        if (concedida) {
+            buscarLocalizacaoAtual()
+        } else {
+            mensagemLocalizacaoPositiva = false
+            mensagemLocalizacao = "Permissão de localização negada. Autorize para preencher o endereço automaticamente."
+        }
+    }
 
     fun buscarDadosPorCep(cepBusca: String) {
         val limpo = cepBusca.filter { it.isDigit() }
@@ -99,16 +196,16 @@ fun CreateUsuarioScreen(
     }
 
     // Busca automática assim que o usuário digitar os 8 dígitos do CEP
-    LaunchedEffect(cep) {
+    LaunchedEffect(cep, enderecoUsandoLocalizacao) {
         val limpo = cep.filter { it.isDigit() }
-        if (limpo.length == 8) {
+        if (limpo.length == 8 && !enderecoUsandoLocalizacao) {
             buscarDadosPorCep(limpo)
         }
     }
 
     // Atualiza as coordenadas automaticamente quando o usuário preenche o número da residência
-    LaunchedEffect(numero) {
-        if (numero.isNotBlank() && rua.isNotBlank() && cidade.isNotBlank()) {
+    LaunchedEffect(numero, enderecoUsandoLocalizacao) {
+        if (!enderecoUsandoLocalizacao && numero.isNotBlank() && rua.isNotBlank() && cidade.isNotBlank()) {
             delay(700)
             buscandoCoordenadas = true
             val coord = GeocodingService.buscarCoordenadas(
@@ -250,6 +347,49 @@ fun CreateUsuarioScreen(
 
             Text("Endereço", style = MaterialTheme.typography.titleMedium)
 
+            OutlinedButton(
+                onClick = {
+                    if (hasLocationPermission(context)) {
+                        buscarLocalizacaoAtual()
+                    } else {
+                        locationPermissionLauncher.launch(
+                            arrayOf(
+                                Manifest.permission.ACCESS_FINE_LOCATION,
+                                Manifest.permission.ACCESS_COARSE_LOCATION
+                            )
+                        )
+                    }
+                },
+                enabled = !buscandoLocalizacao && !buscandoCep && !buscandoCoordenadas,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                if (buscandoLocalizacao) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(18.dp),
+                        strokeWidth = 2.dp
+                    )
+                } else {
+                    Icon(
+                        imageVector = Icons.Default.MyLocation,
+                        contentDescription = null
+                    )
+                }
+                Spacer(Modifier.width(8.dp))
+                Text(if (buscandoLocalizacao) "Obtendo endereço..." else "Usar minha localização atual")
+            }
+
+            if (mensagemLocalizacao != null) {
+                Text(
+                    text = mensagemLocalizacao.orEmpty(),
+                    color = if (mensagemLocalizacaoPositiva) {
+                        MaterialTheme.colorScheme.primary
+                    } else {
+                        MaterialTheme.colorScheme.error
+                    },
+                    style = MaterialTheme.typography.bodySmall
+                )
+            }
+
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -259,7 +399,10 @@ fun CreateUsuarioScreen(
                     value = cep,
                     onValueChange = { input ->
                         val digitos = input.filter { it.isDigit() }
-                        if (digitos.length <= 8) cep = digitos
+                        if (digitos.length <= 8) {
+                            if (digitos != cep) marcarEnderecoEditadoManualmente()
+                            cep = digitos
+                        }
                     },
                     label = { Text("CEP (somente números)") },
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
@@ -268,7 +411,10 @@ fun CreateUsuarioScreen(
                 )
                 Button(
                     enabled = !buscandoCep && !buscandoCoordenadas && cep.filter { it.isDigit() }.length == 8,
-                    onClick = { buscarDadosPorCep(cep) }
+                    onClick = {
+                        marcarEnderecoEditadoManualmente()
+                        buscarDadosPorCep(cep)
+                    }
                 ) {
                     Text(if (buscandoCep) "..." else "Buscar CEP")
                 }
@@ -284,7 +430,10 @@ fun CreateUsuarioScreen(
 
             OutlinedTextField(
                 value = rua,
-                onValueChange = { rua = it },
+                onValueChange = {
+                    marcarEnderecoEditadoManualmente()
+                    rua = it
+                },
                 label = { Text("Rua") },
                 modifier = Modifier.fillMaxWidth()
             )
@@ -292,13 +441,19 @@ fun CreateUsuarioScreen(
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedTextField(
                     value = numero,
-                    onValueChange = { numero = it },
+                    onValueChange = {
+                        marcarEnderecoEditadoManualmente()
+                        numero = it
+                    },
                     label = { Text("Número") },
                     modifier = Modifier.weight(1f)
                 )
                 OutlinedTextField(
                     value = estado,
-                    onValueChange = { if (it.length <= 2) estado = it.uppercase() },
+                    onValueChange = {
+                        marcarEnderecoEditadoManualmente()
+                        if (it.length <= 2) estado = it.uppercase()
+                    },
                     label = { Text("UF") },
                     modifier = Modifier.weight(1f)
                 )
@@ -306,7 +461,10 @@ fun CreateUsuarioScreen(
 
             OutlinedTextField(
                 value = cidade,
-                onValueChange = { cidade = it },
+                onValueChange = {
+                    marcarEnderecoEditadoManualmente()
+                    cidade = it
+                },
                 label = { Text("Cidade") },
                 modifier = Modifier.fillMaxWidth()
             )
@@ -373,7 +531,10 @@ fun CreateUsuarioScreen(
                         fotoPerfil = fotoPerfilBase64
                     )
                 },
-                enabled = uiState !is CadastroUiState.Loading,
+                enabled = uiState !is CadastroUiState.Loading &&
+                        !buscandoLocalizacao &&
+                        !buscandoCep &&
+                        !buscandoCoordenadas,
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Text(if (uiState is CadastroUiState.Loading) "Cadastrando..." else "Cadastrar")

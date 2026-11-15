@@ -8,6 +8,7 @@ import com.example.marketplace.model.PendenteSycronizacao
 import com.example.marketplace.model.Venda
 import com.example.marketplace.model.enums.OperacaoPendente
 import com.example.marketplace.model.enums.TipoPendenteSyncronizacao
+import com.example.marketplace.repository.ComprovanteRetiradaRepository
 import com.example.marketplace.service.FirebaseService
 import com.google.firebase.firestore.DocumentSnapshot
 import com.google.firebase.firestore.SetOptions
@@ -23,7 +24,8 @@ class VendaRepository(
     private val vendaDao: VendaDao,
     private val pendenteSycronizacaoDao: PendenteSycronizacaoDao,
     private val produtoRepository: ProdutoRepository,
-    private val rastreioEntregaRepository: RastreioEntregaRepository
+    private val rastreioEntregaRepository: RastreioEntregaRepository,
+    private val comprovanteRetiradaRepository: ComprovanteRetiradaRepository
 ) {
 
     private val colecao = FirebaseService.firestore.collection("vendas")
@@ -121,6 +123,10 @@ class VendaRepository(
                     payloadJson = gson.toJson(atualizada)
                 )
             )
+        }
+
+        if (novoStatus in setOf("PRONTO_PARA_ENTREGA", "PENDENTE", "CANCELADA")) {
+            comprovanteRetiradaRepository.excluirPorVenda(id)
         }
 
         // Se mudou para PRONTO_PARA_ENTREGA e foi informado ponto de origem, cria rastreio

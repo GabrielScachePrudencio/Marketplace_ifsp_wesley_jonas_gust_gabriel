@@ -6,6 +6,7 @@ import androidx.lifecycle.ViewModelProvider
 import com.example.marketplace.data.local.AppDatabase
 import com.example.marketplace.repository.ProdutoRepository
 import com.example.marketplace.repository.RastreioEntregaRepository
+import com.example.marketplace.repository.ComprovanteRetiradaRepository
 import com.example.marketplace.repository.VendaRepository
 
 class FilaEntregasViewModelFactory(
@@ -27,7 +28,8 @@ class FilaEntregasViewModelFactory(
             db.vendaDao(),
             db.pendenteSycronizacaoDao(),
             produtoRepository,
-            repository
+            repository,
+            ComprovanteRetiradaRepository(context)
         )
 
         @Suppress("UNCHECKED_CAST")

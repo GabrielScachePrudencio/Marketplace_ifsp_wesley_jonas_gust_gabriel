@@ -1,6 +1,7 @@
 package com.example.marketplace.repository
 
 import com.example.marketplace.service.FirebaseService
+import com.google.firebase.firestore.SetOptions
 import kotlinx.coroutines.tasks.await
 import kotlinx.coroutines.withTimeoutOrNull
 
@@ -14,16 +15,27 @@ class LocalizacaoMotoristaRepository {
      * pois a próxima atualização do GPS (poucos segundos depois) já resolve.
      * Não faz sentido enfileirar posições antigas pra sincronizar depois.
      */
-    suspend fun enviarLocalizacao(vendaId: String, latitude: Double, longitude: Double): Boolean {
-        val dados = mapOf(
+    suspend fun enviarLocalizacao(
+        vendaId: String,
+        latitude: Double,
+        longitude: Double,
+        precisaoMetros: Float?,
+        motoristaId: String,
+        timestampMillis: Long
+    ): Boolean {
+        val dados = mutableMapOf<String, Any?>(
             "latitude" to latitude,
             "longitude" to longitude,
-            "timestamp" to System.currentTimeMillis()
+            "precisaoMetros" to precisaoMetros?.toDouble(),
+            "motoristaId" to motoristaId,
+            "timestamp" to (
+                timestampMillis.takeIf { it > 0L } ?: System.currentTimeMillis()
+            )
         )
 
         return withTimeoutOrNull(5000) {
             try {
-                colecao.document(vendaId).set(dados).await()
+                colecao.document(vendaId).set(dados, SetOptions.merge()).await()
                 true
             } catch (e: Exception) {
                 false

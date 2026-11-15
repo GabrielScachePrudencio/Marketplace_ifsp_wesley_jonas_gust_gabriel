@@ -4,7 +4,9 @@ import android.annotation.SuppressLint
 import android.content.Context
 import com.example.marketplace.repository.LocalizacaoMotoristaRepository
 import com.example.marketplace.service.LocationTrackingService
+import com.example.marketplace.service.ProximidadeEntregaPolicy
 import com.google.android.gms.location.*
+import com.google.firebase.auth.FirebaseAuth
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -28,6 +30,7 @@ class LocalizacaoMotoristaTracker(
 
     @SuppressLint("MissingPermission")
     fun iniciar(vendasIds: List<String>) {
+        ProximidadeEntregaPolicy.carregar(context)
         val novoConjunto = vendasIds.filter { it.isNotBlank() }.toSet()
         if (novoConjunto.isEmpty()) {
             pararSeAtivo(limparNoServidor = true)
@@ -53,8 +56,12 @@ class LocalizacaoMotoristaTracker(
 
         val request = LocationRequest.Builder(
             Priority.PRIORITY_HIGH_ACCURACY,
-            5000L // A cada 5 segundos
-        ).setMinUpdateIntervalMillis(3000L).build()
+            3000L // A cada 3 segundos
+        )
+            .setMinUpdateIntervalMillis(2000L)
+            .setMaxUpdateAgeMillis(3000L)
+            .setWaitForAccurateLocation(true)
+            .build()
 
         val novoCallback = object : LocationCallback() {
             override fun onLocationResult(result: LocationResult) {
@@ -65,13 +72,22 @@ class LocalizacaoMotoristaTracker(
                 }
                 val loc = result.lastLocation ?: return
                 val idsParaEnviar = vendasIdsAtuais
+                val motoristaId = FirebaseAuth.getInstance().currentUser?.uid
                 scope.launch {
                     idsParaEnviar.forEach { id ->
-                        repository.enviarLocalizacao(id, loc.latitude, loc.longitude)
+                        if (!motoristaId.isNullOrBlank()) {
+                            repository.enviarLocalizacao(
+                                vendaId = id,
+                                latitude = loc.latitude,
+                                longitude = loc.longitude,
+                                precisaoMetros = loc.accuracy.takeIf { loc.hasAccuracy() },
+                                motoristaId = motoristaId,
+                                timestampMillis = loc.time
+                            )
+                        }
                         LocationTrackingService.verificarERegistrarProximidade(
                             vendaId = id,
-                            latitudeMotorista = loc.latitude,
-                            longitudeMotorista = loc.longitude
+                            localizacaoMotorista = loc
                         )
                     }
                 }
