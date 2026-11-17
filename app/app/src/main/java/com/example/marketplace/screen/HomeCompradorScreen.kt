@@ -7,6 +7,8 @@ import com.example.marketplace.model.Usuario
 private enum class TelaComprador {
     PRODUTOS,
     DETALHE_PRODUTO,
+    FINALIZAR_COMPRA,
+    COMPRA_REALIZADA,
     MINHAS_VENDAS,
     DETALHE_PEDIDO,
     RASTREAMENTO_ENTREGA,
@@ -23,6 +25,8 @@ fun HomeCompradorScreen(
 ) {
     var telaAtual by remember { mutableStateOf(TelaComprador.PRODUTOS) }
     var produtoSelecionadoId by remember { mutableStateOf<String?>(null) }
+    var quantidadeCompraInicial by remember { mutableIntStateOf(1) }
+    var resumoUltimaCompra by remember { mutableStateOf<ResumoCompraConfirmada?>(null) }
     var vendaSelecionadaId by remember { mutableStateOf<String?>(null) }
     var telaAnteriorRastreio by remember { mutableStateOf(TelaComprador.MINHAS_VENDAS) }
 
@@ -39,6 +43,8 @@ fun HomeCompradorScreen(
         telaAtual = when (telaAtual) {
             TelaComprador.RASTREAMENTO_ENTREGA -> telaAnteriorRastreio
             TelaComprador.DETALHE_PEDIDO -> TelaComprador.MINHAS_VENDAS
+            TelaComprador.FINALIZAR_COMPRA -> TelaComprador.DETALHE_PRODUTO
+            TelaComprador.COMPRA_REALIZADA,
             TelaComprador.DETALHE_PRODUTO,
             TelaComprador.MINHAS_VENDAS,
             TelaComprador.EDITAR_PERFIL -> TelaComprador.PRODUTOS
@@ -82,8 +88,56 @@ fun HomeCompradorScreen(
                     produtoId = id,
                     onVoltar = {
                         telaAtual = TelaComprador.PRODUTOS
+                    },
+                    onIniciarCompra = { prodId, qtd ->
+                        produtoSelecionadoId = prodId
+                        quantidadeCompraInicial = qtd
+                        telaAtual = TelaComprador.FINALIZAR_COMPRA
                     }
                 )
+            }
+        }
+
+        TelaComprador.FINALIZAR_COMPRA -> {
+            val id = produtoSelecionadoId
+            if (id != null) {
+                FinalizarCompraScreen(
+                    usuario = usuario,
+                    produtoId = id,
+                    quantidadeInicial = quantidadeCompraInicial,
+                    onVoltar = {
+                        telaAtual = TelaComprador.DETALHE_PRODUTO
+                    },
+                    onUsuarioAtualizado = onUsuarioAtualizado,
+                    onCompraConfirmada = { resumo ->
+                        resumoUltimaCompra = resumo
+                        vendaSelecionadaId = resumo.venda.id
+                        telaAtual = TelaComprador.COMPRA_REALIZADA
+                    }
+                )
+            } else {
+                telaAtual = TelaComprador.PRODUTOS
+            }
+        }
+
+        TelaComprador.COMPRA_REALIZADA -> {
+            val resumo = resumoUltimaCompra
+            if (resumo != null) {
+                CompraRealizadaScreen(
+                    resumo = resumo,
+                    onVerPedido = { vendaId ->
+                        vendaSelecionadaId = vendaId
+                        telaAtual = TelaComprador.DETALHE_PEDIDO
+                    },
+                    onIrMinhasCompras = {
+                        telaAtual = TelaComprador.MINHAS_VENDAS
+                    },
+                    onContinuarComprando = {
+                        telaAtual = TelaComprador.PRODUTOS
+                    }
+                )
+            } else {
+                telaAtual = TelaComprador.MINHAS_VENDAS
             }
         }
 

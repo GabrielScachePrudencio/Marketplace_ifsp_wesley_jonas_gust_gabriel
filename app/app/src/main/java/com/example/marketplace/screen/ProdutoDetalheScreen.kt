@@ -48,7 +48,8 @@ private val CorEstrela = Color(0xFFF5A623)
 fun ProdutoDetalheScreen(
     usuario: Usuario,
     produtoId: String,
-    onVoltar: () -> Unit
+    onVoltar: () -> Unit,
+    onIniciarCompra: (produtoId: String, quantidadeInicial: Int) -> Unit = { _, _ -> }
 ) {
     val context = LocalContext.current
     val viewModel: ProdutoDetalheViewModel = viewModel(
@@ -61,7 +62,6 @@ fun ProdutoDetalheScreen(
 
     val produtoAtual by viewModel.produto.collectAsState()
     val avaliacoes by viewModel.avaliacoes.collectAsState()
-    val compraUiState by viewModel.compraUiState.collectAsState()
     val avaliacaoUiState by viewModel.avaliacaoUiState.collectAsState()
     val podeAvaliar by viewModel.podeAvaliar.collectAsState()
     val videoUiState by viewModel.videoUiState.collectAsState()
@@ -72,13 +72,6 @@ fun ProdutoDetalheScreen(
     var indiceGaleria by remember(produtoId) { mutableStateOf<Int?>(null) }
     val snackbarHostState = remember { SnackbarHostState() }
 
-    LaunchedEffect(compraUiState) {
-        if (compraUiState is CompraUiState.Sucesso) {
-            quantidadeCompra = 1
-            viewModel.resetarCompra()
-            snackbarHostState.showSnackbar("Compra realizada! Acompanhe em \"Minhas compras\".")
-        }
-    }
     LaunchedEffect(avaliacaoUiState) {
         if (avaliacaoUiState is AvaliacaoUiState.Sucesso) {
             comentario = ""
@@ -191,35 +184,25 @@ fun ProdutoDetalheScreen(
                         }
                         Spacer(Modifier.height(8.dp))
                         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                            Text("Total", style = MaterialTheme.typography.titleMedium)
+                            Text("Total estimado", style = MaterialTheme.typography.titleMedium)
                             Text(
                                 "R$ %.2f".format(produto.preco * quantidadeCompra),
                                 style = MaterialTheme.typography.titleMedium,
                                 color = MaterialTheme.colorScheme.primary
                             )
                         }
-                        if (compraUiState is CompraUiState.Erro) {
-                            Spacer(Modifier.height(8.dp))
-                            Text(
-                                (compraUiState as CompraUiState.Erro).mensagem,
-                                color = MaterialTheme.colorScheme.error
-                            )
-                        }
                         Spacer(Modifier.height(12.dp))
                         Button(
-                            onClick = { viewModel.comprar(usuario.uid, quantidadeCompra, usuario.nome) },
-                            enabled = compraUiState !is CompraUiState.Loading && produto.quantidade > 0,
+                            onClick = {
+                                onIniciarCompra(
+                                    produto.id,
+                                    quantidadeCompra.coerceIn(1, produto.quantidade.coerceAtLeast(1))
+                                )
+                            },
+                            enabled = produto.quantidade > 0,
                             modifier = Modifier.fillMaxWidth().height(50.dp)
                         ) {
-                            if (compraUiState is CompraUiState.Loading) {
-                                CircularProgressIndicator(
-                                    modifier = Modifier.size(20.dp),
-                                    strokeWidth = 2.dp,
-                                    color = MaterialTheme.colorScheme.onPrimary
-                                )
-                            } else {
-                                Text(if (produto.quantidade > 0) "Comprar agora" else "Esgotado")
-                            }
+                            Text(if (produto.quantidade > 0) "Comprar agora" else "Esgotado")
                         }
                     }
                 }

@@ -8,6 +8,7 @@ import com.example.marketplace.repository.ProdutoRepository
 import com.example.marketplace.repository.VendaRepository
 import com.example.marketplace.model.AvaliacaoProduto
 import com.example.marketplace.model.Produto
+import com.example.marketplace.model.Venda
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -22,7 +23,7 @@ import kotlinx.coroutines.launch
 sealed class CompraUiState {
     object Idle : CompraUiState()
     object Loading : CompraUiState()
-    object Sucesso : CompraUiState()
+    data class Sucesso(val venda: Venda) : CompraUiState()
     data class Erro(val mensagem: String) : CompraUiState()
 }
 
@@ -100,7 +101,7 @@ class ProdutoDetalheViewModel(
         viewModelScope.launch {
             _compraUiState.value = CompraUiState.Loading
             try {
-                vendaRepository.criarVenda(
+                val vendaCriada = vendaRepository.criarVenda(
                     compradorId = compradorId,
                     vendedorId = produtoAtual.vendedorId,
                     motoristaId = "",
@@ -110,7 +111,7 @@ class ProdutoDetalheViewModel(
                     produtoTitulo = produtoAtual.titulo
                 )
                 _produto.value = produtoRepository.buscarProdutoPorId(produtoAtual.id)
-                _compraUiState.value = CompraUiState.Sucesso
+                _compraUiState.value = CompraUiState.Sucesso(vendaCriada)
             } catch (e: Exception) {
                 _compraUiState.value = CompraUiState.Erro(e.message ?: "Erro ao comprar")
             }
