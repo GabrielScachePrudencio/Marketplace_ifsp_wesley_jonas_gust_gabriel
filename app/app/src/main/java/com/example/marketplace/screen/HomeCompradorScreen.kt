@@ -23,10 +23,12 @@ fun HomeCompradorScreen(
     var telaAtual by remember { mutableStateOf(TelaComprador.PRODUTOS) }
     var produtoSelecionadoId by remember { mutableStateOf<String?>(null) }
     var vendaSelecionadaId by remember { mutableStateOf<String?>(null) }
+    var telaAnteriorRastreio by remember { mutableStateOf(TelaComprador.MINHAS_VENDAS) }
 
     LaunchedEffect(vendaIdParaAbrir) {
         vendaIdParaAbrir?.let { vendaId ->
             vendaSelecionadaId = vendaId
+            telaAnteriorRastreio = TelaComprador.PRODUTOS
             telaAtual = TelaComprador.RASTREAMENTO_ENTREGA
             onNotificacaoConsumida()
         }
@@ -34,7 +36,7 @@ fun HomeCompradorScreen(
 
     BackHandler(enabled = telaAtual != TelaComprador.PRODUTOS) {
         telaAtual = when (telaAtual) {
-            TelaComprador.RASTREAMENTO_ENTREGA -> TelaComprador.MINHAS_VENDAS
+            TelaComprador.RASTREAMENTO_ENTREGA -> telaAnteriorRastreio
             TelaComprador.DETALHE_PRODUTO,
             TelaComprador.MINHAS_VENDAS,
             TelaComprador.EDITAR_PERFIL -> TelaComprador.PRODUTOS
@@ -57,6 +59,11 @@ fun HomeCompradorScreen(
                 },
                 onMinhasVendas = {
                     telaAtual = TelaComprador.MINHAS_VENDAS
+                },
+                onRastrearEntrega = { vendaId ->
+                    vendaSelecionadaId = vendaId
+                    telaAnteriorRastreio = TelaComprador.PRODUTOS
+                    telaAtual = TelaComprador.RASTREAMENTO_ENTREGA
                 },
                 onEditarPerfil = {
                     telaAtual = TelaComprador.EDITAR_PERFIL
@@ -86,6 +93,7 @@ fun HomeCompradorScreen(
                 },
                 onRastrearEntrega = { vendaId ->
                     vendaSelecionadaId = vendaId
+                    telaAnteriorRastreio = TelaComprador.MINHAS_VENDAS
                     telaAtual = TelaComprador.RASTREAMENTO_ENTREGA
                 }
             )
@@ -98,7 +106,7 @@ fun HomeCompradorScreen(
                     usuario = usuario,
                     vendaId = vendaId,
                     onVoltar = {
-                        telaAtual = TelaComprador.MINHAS_VENDAS
+                        telaAtual = telaAnteriorRastreio
                     }
                 )
             }

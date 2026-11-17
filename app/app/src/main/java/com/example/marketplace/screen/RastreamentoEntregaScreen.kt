@@ -429,8 +429,24 @@ fun RastreamentoEntregaScreen(
                         }
 
                         val novaRota = RoteamentoService.buscarRota(listOf(partida, destinoRota))
-                        rota = novaRota
                         if (novaRota != null) {
+                            rota = novaRota
+                            ultimoPontoCalculado = partida
+                            ultimoModoMotorista = usandoMotorista
+                            ultimoDestinoCalculado = destinoRota
+                        } else if (rota == null) {
+                            val d = FloatArray(1)
+                            android.location.Location.distanceBetween(
+                                partida.latitude, partida.longitude,
+                                destinoRota.latitude, destinoRota.longitude, d
+                            )
+                            val distanciaEstimada = (d[0].toDouble() * 1.3).coerceAtLeast(50.0)
+                            val duracaoEstimada = (distanciaEstimada / 8.33).coerceAtLeast(60.0)
+                            rota = Rota(
+                                pontos = listOf(partida, destinoRota),
+                                distanciaMetros = distanciaEstimada,
+                                duracaoSegundos = duracaoEstimada
+                            )
                             ultimoPontoCalculado = partida
                             ultimoModoMotorista = usandoMotorista
                             ultimoDestinoCalculado = destinoRota
@@ -505,7 +521,7 @@ fun RastreamentoEntregaScreen(
                                 horizontalAlignment = Alignment.CenterHorizontally
                             ) {
                                 val r = rota
-                                if (r != null && (localizacaoMotorista != null || !mostrarMotorista)) {
+                                if (r != null) {
                                     val chegada = java.text.SimpleDateFormat("HH:mm", java.util.Locale.getDefault())
                                         .format(java.util.Date(System.currentTimeMillis() + (r.duracaoSegundos * 1000).toLong()))
                                     Text(

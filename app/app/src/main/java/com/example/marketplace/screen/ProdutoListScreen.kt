@@ -1,5 +1,6 @@
 package com.example.marketplace.screen
 
+import android.location.Location
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyRow
@@ -14,6 +15,7 @@ import androidx.compose.material.icons.automirrored.filled.Logout
 import androidx.compose.material.icons.automirrored.filled.ReceiptLong
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Inventory2
+import androidx.compose.material.icons.filled.LocalShipping
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Place
 import androidx.compose.material.icons.filled.SearchOff
@@ -31,15 +33,30 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.example.marketplace.controller.LocalizacaoMotorista
 import com.example.marketplace.controller.ProdutoListViewModel
 import com.example.marketplace.controller.ProdutoListViewModelFactory
+import com.example.marketplace.controller.VendaListViewModel
+import com.example.marketplace.controller.VendaListViewModelFactory
+import com.example.marketplace.data.local.AppDatabase
+import com.example.marketplace.model.PontoReferencia
 import com.example.marketplace.model.Produto
+import com.example.marketplace.model.RastreioEntrega
 import com.example.marketplace.model.Usuario
+import com.example.marketplace.model.Venda
+import com.example.marketplace.model.enums.StatusEntrega
+import com.example.marketplace.repository.PontoReferenciaRepository
+import com.example.marketplace.repository.RastreioEntregaRepository
+import com.example.marketplace.service.GeocodingService
+import com.example.marketplace.service.PontoRota
+import com.example.marketplace.service.Rota
+import com.example.marketplace.service.RoteamentoService
 import com.example.marketplace.util.AvatarUsuario
 import com.example.marketplace.util.CampoBusca
 import com.example.marketplace.util.ImagemProduto
 import com.example.marketplace.util.correspondeBusca
 import com.example.marketplace.util.normalizarBusca
+import com.google.firebase.firestore.FirebaseFirestore
 
 private enum class OrdemProdutos(val rotulo: String) {
     RECENTES("Mais recentes"),
@@ -54,6 +71,7 @@ fun ProdutoListScreen(
     onProdutoClick: (String) -> Unit,
     onCriarProduto: () -> Unit,
     onMinhasVendas: () -> Unit,
+    onRastrearEntrega: (String) -> Unit = {},
     onPontosReferencia: () -> Unit = {},
     onEditarPerfil: () -> Unit = {},
     onLogout: () -> Unit
@@ -63,6 +81,22 @@ fun ProdutoListScreen(
         factory = ProdutoListViewModelFactory(context)
     )
     val todosProdutos by viewModel.produtos.collectAsState()
+
+    val vendaViewModel: VendaListViewModel = viewModel(
+        factory = VendaListViewModelFactory(context)
+    )
+    val todasVendas by vendaViewModel.vendas.collectAsState()
+    val entregasACaminho = remember(todasVendas, usuario.uid, usuario.perfil) {
+        if (usuario.perfil != "comprador") {
+            emptyList()
+        } else {
+            todasVendas.filter { venda ->
+                venda.compradorId == usuario.uid &&
+                    (venda.statusEntrega == StatusEntrega.A_CAMINHO ||
+                        venda.statusEntrega == StatusEntrega.SAIU_PARA_ENTREGA)
+            }.sortedByDescending { it.data }
+        }
+    }
 
     var busca by rememberSaveable { mutableStateOf("") }
     var categoriaSelecionada by rememberSaveable { mutableStateOf<String?>(null) }
@@ -145,6 +179,18 @@ fun ProdutoListScreen(
             horizontalArrangement = Arrangement.spacedBy(12.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
+            items(
+                items = entregasACaminho,
+                key = { "aviso_entrega_${it.id}" },
+                span = { GridItemSpan(maxLineSpan) }
+            ) { venda ->
+                AvisoEntregaACaminhoCard(
+                    venda = venda,
+                    usuario = usuario,
+                    onClick = { onRastrearEntrega(venda.id) }
+                )
+            }
+
             item(span = { GridItemSpan(maxLineSpan) }) {
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     CampoBusca(
@@ -340,5 +386,260 @@ private fun SeloCard(texto: String, fundo: Color, cor: Color) {
             fontWeight = FontWeight.Bold,
             modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
         )
+    }
+}
+
+@Composable
+private fun AvisoEntregaACaminhoCard(
+    venda: Venda,
+    usuario: Usuario,
+    onClick: () -> Unit
+) {
+    val context = LocalContext.current
+    val db = remember(context) { AppDatabase.getDatabase(context) }
+    val rastreioRepository = remember(db) {
+        RastreioEntregaRepository(db.rastreioEntregaDao(), db.pendenteSycronizacaoDao())
+    }
+    val pontoReferenciaRepository = remember(db) {
+        PontoReferenciaRepository(db.pontoReferenciaDao(), db.pendenteSycronizacaoDao())
+    }
+
+    val rastreio by produceState<RastreioEntrega?>(initialValue = null, key1 = venda.id) {
+        value = rastreioRepository.buscarPorVendaIdUmaVez(venda.id)
+        rastreioRepository.buscarPorVendaId(venda.id).collect { atualizado ->
+            if (atualizado != null) value = atualizado
+        }
+    }
+
+    val pontoOrigem by produceState<PontoReferencia?>(initialValue = null, key1 = rastreio?.pontoOrigemId) {
+        val id = rastreio?.pontoOrigemId.orEmpty()
+        value = if (id.isNotBlank()) pontoReferenciaRepository.buscarPontoPorId(id) else null
+    }
+
+    var localizacaoMotorista by remember(venda.id) { mutableStateOf<LocalizacaoMotorista?>(null) }
+
+    DisposableEffect(venda.id) {
+        val listener = try {
+            FirebaseFirestore.getInstance()
+                .collection("localizacoes_tempo_real")
+                .document(venda.id)
+                .addSnapshotListener { snapshot, erro ->
+                    if (erro != null) return@addSnapshotListener
+                    val lat = snapshot?.getDouble("latitude")
+                    val lng = snapshot?.getDouble("longitude")
+                    val timestamp = snapshot?.getLong("timestamp")
+                    val precisao = (snapshot?.get("precisaoMetros") as? Number)?.toDouble()
+                    if (lat != null && lng != null && timestamp != null && lat != 0.0 && lng != 0.0) {
+                        localizacaoMotorista = LocalizacaoMotorista(lat, lng, timestamp, precisao)
+                    } else {
+                        localizacaoMotorista = null
+                    }
+                }
+        } catch (_: Exception) {
+            null
+        }
+        onDispose {
+            listener?.remove()
+        }
+    }
+
+    var destinoLatGeocodificado by remember(venda.id) { mutableStateOf<Double?>(null) }
+    var destinoLngGeocodificado by remember(venda.id) { mutableStateOf<Double?>(null) }
+
+    val destinoLat = rastreio?.destinoLat?.takeIf { it != 0.0 }
+        ?: usuario.latitude.takeIf { it != 0.0 }
+        ?: destinoLatGeocodificado ?: 0.0
+    val destinoLng = rastreio?.destinoLng?.takeIf { it != 0.0 }
+        ?: usuario.longitude.takeIf { it != 0.0 }
+        ?: destinoLngGeocodificado ?: 0.0
+
+    LaunchedEffect(rastreio?.destinoLat, rastreio?.destinoLng, rastreio?.enderecoDestinoTexto, usuario.uid) {
+        if (destinoLat == 0.0 || destinoLng == 0.0) {
+            val coord = if (usuario.rua.isNotBlank() || usuario.cidade.isNotBlank() || usuario.cep.isNotBlank()) {
+                GeocodingService.buscarCoordenadas(
+                    rua = usuario.rua,
+                    numero = usuario.numero,
+                    cidade = usuario.cidade,
+                    estado = usuario.estado,
+                    cep = usuario.cep
+                )
+            } else if (!rastreio?.enderecoDestinoTexto.isNullOrBlank()) {
+                GeocodingService.buscarCoordenadasPorTexto("${rastreio!!.enderecoDestinoTexto}, Brasil")
+            } else null
+
+            if (coord != null) {
+                destinoLatGeocodificado = coord.latitude
+                destinoLngGeocodificado = coord.longitude
+            }
+        }
+    }
+
+    var rota by remember(venda.id) { mutableStateOf<Rota?>(null) }
+    var calculandoRota by remember(venda.id) { mutableStateOf(true) }
+    var ultimoPontoCalculado by remember(venda.id) { mutableStateOf<PontoRota?>(null) }
+    var ultimoDestinoCalculado by remember(venda.id) { mutableStateOf<PontoRota?>(null) }
+    var ultimoModoMotorista by remember(venda.id) { mutableStateOf<Boolean?>(null) }
+
+    LaunchedEffect(venda.id) {
+        kotlinx.coroutines.delay(6000)
+        if (rota == null) {
+            calculandoRota = false
+        }
+    }
+
+    LaunchedEffect(
+        localizacaoMotorista,
+        rastreio?.ultimaLat,
+        rastreio?.ultimaLng,
+        pontoOrigem,
+        destinoLat,
+        destinoLng
+    ) {
+        if (destinoLat == 0.0 || destinoLng == 0.0) {
+            return@LaunchedEffect
+        }
+
+        val locMotorista = localizacaoMotorista
+        val usandoMotorista = locMotorista != null
+        val partida = when {
+            locMotorista != null -> PontoRota(locMotorista.latitude, locMotorista.longitude)
+            rastreio?.ultimaLat != null && rastreio?.ultimaLng != null &&
+                rastreio!!.ultimaLat != 0.0 && rastreio!!.ultimaLng != 0.0 ->
+                PontoRota(rastreio!!.ultimaLat!!, rastreio!!.ultimaLng!!)
+            pontoOrigem != null && pontoOrigem!!.latitude != 0.0 && pontoOrigem!!.longitude != 0.0 ->
+                PontoRota(pontoOrigem!!.latitude, pontoOrigem!!.longitude)
+            else -> return@LaunchedEffect
+        }
+        val destinoRota = PontoRota(destinoLat, destinoLng)
+
+        val anterior = ultimoPontoCalculado
+        if (anterior != null && rota != null &&
+            ultimoModoMotorista == usandoMotorista &&
+            ultimoDestinoCalculado == destinoRota
+        ) {
+            val d = FloatArray(1)
+            Location.distanceBetween(
+                anterior.latitude, anterior.longitude,
+                partida.latitude, partida.longitude, d
+            )
+            if (d[0] < 10f) return@LaunchedEffect
+        }
+
+        calculandoRota = rota == null
+        val novaRota = RoteamentoService.buscarRota(listOf(partida, destinoRota))
+        if (novaRota != null) {
+            rota = novaRota
+            ultimoPontoCalculado = partida
+            ultimoModoMotorista = usandoMotorista
+            ultimoDestinoCalculado = destinoRota
+        } else if (rota == null) {
+            val d = FloatArray(1)
+            Location.distanceBetween(
+                partida.latitude, partida.longitude,
+                destinoRota.latitude, destinoRota.longitude, d
+            )
+            val distanciaEstimada = (d[0].toDouble() * 1.3).coerceAtLeast(50.0)
+            val duracaoEstimada = (distanciaEstimada / 8.33).coerceAtLeast(60.0)
+            rota = Rota(
+                pontos = listOf(partida, destinoRota),
+                distanciaMetros = distanciaEstimada,
+                duracaoSegundos = duracaoEstimada
+            )
+            ultimoPontoCalculado = partida
+            ultimoModoMotorista = usandoMotorista
+            ultimoDestinoCalculado = destinoRota
+        }
+        calculandoRota = false
+    }
+
+    val tituloProduto = venda.produtoTitulo.ifBlank { "Pedido #${venda.id.take(8)}" }
+
+    Card(
+        onClick = onClick,
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.primaryContainer
+        ),
+        elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Surface(
+                color = MaterialTheme.colorScheme.primary,
+                shape = RoundedCornerShape(12.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.LocalShipping,
+                    contentDescription = "Entrega a caminho",
+                    tint = MaterialTheme.colorScheme.onPrimary,
+                    modifier = Modifier.padding(10.dp).size(26.dp)
+                )
+            }
+
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                Text(
+                    text = "Sua entrega está a caminho!",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onPrimaryContainer
+                )
+                Text(
+                    text = "Pedido: $tituloProduto",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onPrimaryContainer,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+
+                val r = rota
+                if (r != null) {
+                    val chegada = java.text.SimpleDateFormat("HH:mm", java.util.Locale.getDefault())
+                        .format(java.util.Date(System.currentTimeMillis() + (r.duracaoSegundos * 1000).toLong()))
+                    Text(
+                        text = "Chega em ~${r.duracaoTexto} (${r.distanciaTexto} • previsão ~$chegada)",
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                } else if (calculandoRota) {
+                    Text(
+                        text = "Calculando tempo estimado...",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onPrimaryContainer
+                    )
+                } else {
+                    Text(
+                        text = "Tempo estimado disponível no mapa de rastreio",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onPrimaryContainer
+                    )
+                }
+
+                if (venda.proximidadeNotificada) {
+                    Text(
+                        text = "📍 O entregador já está próximo do seu endereço!",
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                }
+
+                Text(
+                    text = "Toque para abrir a tela de rastreio →",
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.85f)
+                )
+            }
+        }
     }
 }
