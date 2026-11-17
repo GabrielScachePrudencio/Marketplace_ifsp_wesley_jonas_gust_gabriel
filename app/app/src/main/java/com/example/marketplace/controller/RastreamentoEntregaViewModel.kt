@@ -82,6 +82,9 @@ class RastreamentoEntregaViewModel(
     private val _entregaEmAndamento = MutableStateFlow(false)
     val entregaEmAndamento: StateFlow<Boolean> = _entregaEmAndamento.asStateFlow()
 
+    private val _entregaRecemConfirmada = MutableStateFlow(false)
+    val entregaRecemConfirmada: StateFlow<Boolean> = _entregaRecemConfirmada.asStateFlow()
+
     private val _mensagemEntrega = MutableStateFlow<String?>(null)
     val mensagemEntrega: StateFlow<String?> = _mensagemEntrega.asStateFlow()
 
@@ -219,6 +222,7 @@ class RastreamentoEntregaViewModel(
                     perfil = "motorista",
                     motoristaId = motoristaId
                 )
+                _entregaRecemConfirmada.value = true
             } catch (e: kotlinx.coroutines.CancellationException) {
                 throw e
             } catch (e: Exception) {
@@ -227,6 +231,10 @@ class RastreamentoEntregaViewModel(
                 _entregaEmAndamento.value = false
             }
         }
+    }
+
+    fun consumirConfirmacaoEntrega() {
+        _entregaRecemConfirmada.value = false
     }
 
     private fun escutarLocalizacaoTempoReal(vendaId: String) {

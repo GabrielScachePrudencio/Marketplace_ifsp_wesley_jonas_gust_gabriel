@@ -183,6 +183,7 @@ fun PedidoDetalheScreen(
     var fotoEntregaPendente by remember(vendaId) { mutableStateOf<Uri?>(null) }
     var confirmandoEntrega by remember(vendaId) { mutableStateOf(false) }
     var erroEntrega by remember(vendaId) { mutableStateOf<String?>(null) }
+    var mostrarAnimacaoEntregue by remember(vendaId) { mutableStateOf(false) }
 
     val permissaoLocalizacaoLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
@@ -233,6 +234,7 @@ fun PedidoDetalheScreen(
                     motoristaId = usuario.uid,
                     veiculoId = vendaAtual.veiculoId
                 )
+                mostrarAnimacaoEntregue = true
             } catch (e: kotlinx.coroutines.CancellationException) {
                 throw e
             } catch (e: Exception) {
@@ -1009,5 +1011,12 @@ fun PedidoDetalheScreen(
                 }
             )
         }
+
+        EntregaConcluidaAnimacaoDialog(
+            visivel = mostrarAnimacaoEntregue,
+            vendaId = vendaAtual.id,
+            produtoTitulo = vendaAtual.produtoTitulo,
+            onDismiss = { mostrarAnimacaoEntregue = false }
+        )
     }
 }

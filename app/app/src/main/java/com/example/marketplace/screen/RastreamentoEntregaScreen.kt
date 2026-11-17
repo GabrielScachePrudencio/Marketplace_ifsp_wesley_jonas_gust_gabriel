@@ -83,6 +83,7 @@ fun RastreamentoEntregaScreen(
     val comprovante by viewModel.comprovante.collectAsState()
     val comprovanteRetirada by viewModel.comprovanteRetirada.collectAsState()
     val entregaEmAndamento by viewModel.entregaEmAndamento.collectAsState()
+    val entregaRecemConfirmada by viewModel.entregaRecemConfirmada.collectAsState()
     val mensagemEntrega by viewModel.mensagemEntrega.collectAsState()
     val ehMotorista = usuario.perfil == "motorista"
     val scope = rememberCoroutineScope()
@@ -1034,6 +1035,14 @@ fun RastreamentoEntregaScreen(
                 else -> {}
             }
         }
+
+        val vendaCarregada = (uiState as? RastreamentoEntregaUiState.Carregado)?.venda
+        EntregaConcluidaAnimacaoDialog(
+            visivel = entregaRecemConfirmada,
+            vendaId = vendaCarregada?.id ?: vendaId,
+            produtoTitulo = vendaCarregada?.produtoTitulo.orEmpty(),
+            onDismiss = { viewModel.consumirConfirmacaoEntrega() }
+        )
     }
 }
 
