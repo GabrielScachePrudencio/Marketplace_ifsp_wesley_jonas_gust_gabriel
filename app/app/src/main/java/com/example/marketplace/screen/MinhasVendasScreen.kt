@@ -37,11 +37,11 @@ import java.time.format.DateTimeFormatter
 fun MinhasVendasScreen(
     usuario: Usuario,
     onVoltar: () -> Unit,
+    onSelecionarPedido: (String) -> Unit = {},
     onRastrearEntrega: (String) -> Unit = {}
 ) {
     val context = LocalContext.current
-    val escopo = rememberCoroutineScope()
-        val viewModel: VendaListViewModel = viewModel(
+    val viewModel: VendaListViewModel = viewModel(
         factory = VendaListViewModelFactory(context)
     )
     val usuarioViewModel: UsuarioViewModel = viewModel(
@@ -57,11 +57,6 @@ fun MinhasVendasScreen(
     } else {
         vendas.filter { it.vendedorId == usuario.uid }
     }
-    var vendaSelecionada by remember { mutableStateOf<Venda?>(null) }
-
-    // NOVO: estado do diálogo de escolha de ponto de origem
-    var vendaParaMarcarPronta by remember { mutableStateOf<Venda?>(null) }
-    var vendaParaCancelar by remember { mutableStateOf<Venda?>(null) }
 
     var usuariosRelacionados by remember { mutableStateOf<Map<String, Usuario>>(emptyMap()) }
 
@@ -165,114 +160,13 @@ fun MinhasVendasScreen(
                     VendaCard(
                         venda = venda,
                         usuario = usuario,
-                        onVerDetalhes = { vendaSelecionada = venda },
-                        onRastrearEntrega = onRastrearEntrega,
-                        onAtualizarStatus = { novoStatus ->
-                            viewModel.avancarStatus(
-                                vendaId = venda.id,
-                                novoStatus = novoStatus,
-                                perfil = usuario.perfil
-                            )
-                        },
-                        onMarcarProntoParaEntrega = {
-                            vendaParaMarcarPronta = venda
-                        },
-                        onCancelarCompra = {
-                            vendaParaCancelar = venda
-                        }
+                        vendedor = usuariosRelacionados[venda.vendedorId],
+                        comprador = usuariosRelacionados[venda.compradorId],
+                        onSelecionar = { onSelecionarPedido(venda.id) }
                     )
                 }
             }
         }
-    }
-
-    vendaSelecionada?.let { venda ->
-        DetalhesMinhaVendaDialog(
-            venda = venda,
-            ehComprador = ehComprador,
-            vendedor = usuariosRelacionados[venda.vendedorId],
-            comprador = usuariosRelacionados[venda.compradorId],
-            motorista = usuariosRelacionados[venda.motoristaId],
-            onDismiss = { vendaSelecionada = null }
-        )
-    }
-
-    // NOVO: diálogo de escolha do ponto de origem
-    vendaParaMarcarPronta?.let { venda ->
-        val comprador = usuariosRelacionados[venda.compradorId]
-
-        EscolherPontoOrigemDialog(
-            negocianteId = usuario.uid,
-            venda = venda,
-            onConfirmar = { ponto ->
-                vendaParaMarcarPronta = null
-                escopo.launch {
-                    val comp = comprador ?: usuarioViewModel.buscarUsuarioPorId(venda.compradorId)
-
-                    val coordenadas = if (comp?.latitude != null && comp.longitude != null && comp.latitude != 0.0 && comp.longitude != 0.0) {
-                        com.example.marketplace.service.Coordenadas(comp.latitude, comp.longitude)
-                    } else if (comp != null) {
-                        com.example.marketplace.service.GeocodingService.buscarCoordenadas(
-                            rua = comp.rua,
-                            numero = comp.numero,
-                            cidade = comp.cidade,
-                            estado = comp.estado,
-                            cep = comp.cep
-                        )
-                    } else null
-
-                    val enderecoTexto = comp?.let {
-                        val partes = listOf(
-                            listOf(it.rua, it.numero).filter { s -> s.isNotBlank() }.joinToString(", "),
-                            listOf(it.cidade, it.estado).filter { s -> s.isNotBlank() }.joinToString("/")
-                        ).filter { s -> s.isNotBlank() }
-                        partes.joinToString(" - ")
-                    }?.takeIf { it.isNotBlank() } ?: "Endereço do comprador"
-
-                    viewModel.marcarProntoParaEntrega(
-                        venda = venda,
-                        pontoOrigemId = ponto.id,
-                        enderecoDestinoTexto = enderecoTexto,
-                        destinoLat = coordenadas?.latitude ?: 0.0,
-                        destinoLng = coordenadas?.longitude ?: 0.0
-                    )
-                }
-            },
-            onDismiss = { vendaParaMarcarPronta = null }
-        )
-    }
-
-    vendaParaCancelar?.let { venda ->
-        val tituloProduto = venda.produtoTitulo.ifBlank { "Pedido #${venda.id.take(8)}" }
-        AlertDialog(
-            onDismissRequest = { vendaParaCancelar = null },
-            title = { Text("Cancelar compra") },
-            text = {
-                Text("Tem certeza que deseja cancelar a compra de \"$tituloProduto\"? Essa ação não poderá ser desfeita.")
-            },
-            confirmButton = {
-                Button(
-                    onClick = {
-                        viewModel.avancarStatus(
-                            vendaId = venda.id,
-                            novoStatus = StatusEntrega.CANCELADA.name,
-                            perfil = usuario.perfil
-                        )
-                        vendaParaCancelar = null
-                    },
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = MaterialTheme.colorScheme.error
-                    )
-                ) {
-                    Text("Sim, cancelar")
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { vendaParaCancelar = null }) {
-                    Text("Voltar")
-                }
-            }
-        )
     }
 }
 
@@ -301,20 +195,22 @@ fun StatusEntregaBadge(status: StatusEntrega) {
         )
     }
 }
+
 @Composable
 private fun VendaCard(
     venda: Venda,
     usuario: Usuario,
-    onVerDetalhes: () -> Unit,
-    onAtualizarStatus: (String) -> Unit,
-    onRastrearEntrega: (String) -> Unit,
-    onMarcarProntoParaEntrega: () -> Unit,
-    onCancelarCompra: () -> Unit = {}
+    vendedor: Usuario?,
+    comprador: Usuario?,
+    onSelecionar: () -> Unit
 ) {
-    val ehVendedor = venda.vendedorId == usuario.uid
+    val ehComprador = usuario.perfil == "comprador"
     val status = venda.statusEntrega
 
-    Card(modifier = Modifier.fillMaxWidth()) {
+    Card(
+        onClick = onSelecionar,
+        modifier = Modifier.fillMaxWidth()
+    ) {
         Column(modifier = Modifier.padding(16.dp)) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -353,197 +249,33 @@ private fun VendaCard(
                 )
             }
 
-            Spacer(Modifier.height(10.dp))
-            OutlinedButton(
-                onClick = onVerDetalhes,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Text("Ver mais informações")
-            }
-
-            val podeAbrirRastreamento =
-                (usuario.perfil == "comprador" && status in setOf(
-                    StatusEntrega.PRONTO_PARA_ENTREGA,
-                    StatusEntrega.SAIU_PARA_ENTREGA,
-                    StatusEntrega.A_CAMINHO,
-                    StatusEntrega.ENTREGUE
-                )) ||
-                        (ehVendedor && usuario.perfil == "negociador" && status in setOf(
-                            StatusEntrega.PRONTO_PARA_ENTREGA,
-                            StatusEntrega.SAIU_PARA_ENTREGA,
-                            StatusEntrega.A_CAMINHO,
-                            StatusEntrega.ENTREGUE
-                        ))
-            if (podeAbrirRastreamento) {
-                Spacer(Modifier.height(8.dp))
-                Button(
-                    onClick = { onRastrearEntrega(venda.id) },
-                    modifier = Modifier.fillMaxWidth()
-                ) {
+            Spacer(Modifier.height(6.dp))
+            if (ehComprador) {
+                vendedor?.nome?.takeIf { it.isNotBlank() }?.let {
                     Text(
-                        if (status == StatusEntrega.ENTREGUE) "Ver comprovante de entrega"
-                        else "Rastrear Entrega"
+                        "Loja: $it",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            } else {
+                val nomeCliente = venda.compradorNome.ifBlank { comprador?.nome.orEmpty() }
+                if (nomeCliente.isNotBlank()) {
+                    Text(
+                        "Cliente: $nomeCliente",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
             }
 
-            if (usuario.perfil == "comprador" && (
-                        status == StatusEntrega.PENDENTE ||
-                                status == StatusEntrega.PRONTO_PARA_ENTREGA
-                        )
+            Spacer(Modifier.height(10.dp))
+            Button(
+                onClick = onSelecionar,
+                modifier = Modifier.fillMaxWidth()
             ) {
-                Spacer(Modifier.height(8.dp))
-                OutlinedButton(
-                    onClick = onCancelarCompra,
-                    colors = ButtonDefaults.outlinedButtonColors(
-                        contentColor = MaterialTheme.colorScheme.error
-                    ),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Text("Cancelar Compra")
-                }
-            }
-
-            // Mensagem explicativa do status para o comprador
-            if (usuario.perfil == "comprador") {
-                Spacer(Modifier.height(8.dp))
-                val mensagemStatus = when (status) {
-                    StatusEntrega.PENDENTE -> "Aguardando o vendedor preparar seu pedido."
-                    StatusEntrega.PRONTO_PARA_ENTREGA -> "Pedido pronto! Toque em 'Rastrear Entrega' para ver o ponto de coleta no mapa."
-                    StatusEntrega.SAIU_PARA_ENTREGA -> "O motorista saiu para entrega. Acompanhe no mapa!"
-                    StatusEntrega.A_CAMINHO -> "Seu pedido está a caminho com o motorista!"
-                    StatusEntrega.ENTREGUE -> "Pedido entregue. Aproveite sua compra!"
-                    StatusEntrega.CANCELADA -> "Este pedido foi cancelado."
-                }
-                Text(
-                    text = mensagemStatus,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-
-            // Ações do Negociador (Vendedor)
-            if (ehVendedor && usuario.perfil == "negociador") {
-                Spacer(Modifier.height(12.dp))
-                when (status) {
-                    StatusEntrega.PENDENTE -> {
-                        Button(
-                            onClick = onMarcarProntoParaEntrega,
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Text("Marcar como Pronto para Entrega")
-                        }
-                    }
-                    StatusEntrega.PRONTO_PARA_ENTREGA -> {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text(
-                                "Aguardando motorista",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.primary
-                            )
-                            OutlinedButton(
-                                onClick = { onAtualizarStatus(StatusEntrega.PENDENTE.name) }
-                            ) {
-                                Text("Voltar para Pendente")
-                            }
-                        }
-                    }
-                    StatusEntrega.SAIU_PARA_ENTREGA -> {
-                        Text(
-                            "Motorista saiu para entrega",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.secondary
-                        )
-                    }
-                    StatusEntrega.A_CAMINHO -> {
-                        Text(
-                            "Em transporte pelo motorista",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.secondary
-                        )
-                    }
-                    StatusEntrega.ENTREGUE -> {
-                        Text(
-                            "Entrega finalizada",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.tertiary
-                        )
-                    }
-                    StatusEntrega.CANCELADA -> {}
-                }
+                Text(if (ehComprador) "Ver Pedido" else "Gerenciar Pedido")
             }
         }
     }
-}
-
-@Composable
-private fun DetalhesMinhaVendaDialog(
-    venda: Venda,
-    ehComprador: Boolean,
-    vendedor: Usuario?,
-    comprador: Usuario?,
-    motorista: Usuario?,
-    onDismiss: () -> Unit
-) {
-    val tituloProduto = venda.produtoTitulo.ifBlank { "Produto #${venda.produtoId.take(6)}" }
-    val dataFormatada = try {
-        venda.dataCriacao.format(DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm"))
-    } catch (_: Exception) {
-        ""
-    }
-
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = {
-            Column {
-                Text("Detalhes do pedido #${venda.id.take(8)}")
-                StatusEntregaBadge(status = venda.statusEntrega)
-            }
-        },
-        text = {
-            Column(
-                modifier = Modifier.verticalScroll(rememberScrollState()),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                Text("Produto: $tituloProduto", fontWeight = FontWeight.SemiBold)
-                Text("Quantidade: ${venda.quantidade}")
-                if (venda.valorUnitario > 0.0) {
-                    Text("Valor unitário: R$ %.2f".format(venda.valorUnitario))
-                }
-                Text("Valor total: R$ %.2f".format(venda.valorTotal), fontWeight = FontWeight.Bold)
-                if (dataFormatada.isNotBlank()) {
-                    Text("Data da compra: $dataFormatada", style = MaterialTheme.typography.bodySmall)
-                }
-
-                HorizontalDivider()
-                if (ehComprador) {
-                    Text("Onde você comprou", fontWeight = FontWeight.Bold)
-                    Text(vendedor?.nome ?: "Loja não identificada")
-                    vendedor?.let { loja ->
-                        if (loja.rua.isNotBlank()) Text("Endereço: ${loja.rua}, Nº ${loja.numero}")
-                        if (loja.cidade.isNotBlank()) Text("${loja.cidade} - ${loja.estado}")
-                        if (loja.email.isNotBlank()) Text("Contato: ${loja.email}")
-                    }
-                } else {
-                    Text("Dados do comprador", fontWeight = FontWeight.Bold)
-                    Text(comprador?.nome ?: venda.compradorNome.ifBlank { "Cliente não identificado" })
-                    comprador?.let { cliente ->
-                        if (cliente.email.isNotBlank()) Text("Email: ${cliente.email}")
-                        if (cliente.rua.isNotBlank()) Text("Entrega: ${cliente.rua}, Nº ${cliente.numero}")
-                        if (cliente.cidade.isNotBlank()) Text("${cliente.cidade} - ${cliente.estado}")
-                    }
-                    if (motorista != null) {
-                        Text("Motorista: ${motorista.nome}")
-                    }
-                }
-            }
-        },
-        confirmButton = {
-            Button(onClick = onDismiss) { Text("Fechar") }
-        }
-    )
 }

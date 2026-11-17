@@ -10,6 +10,7 @@ private enum class TelaNegociador {
     CRIAR_PRODUTO,
     DETALHE_PRODUTO,
     MINHAS_VENDAS,
+    DETALHE_PEDIDO,
     RASTREAMENTO_ENTREGA,
     PONTOS_REFERENCIA,
     CRIAR_EDITAR_PONTO,
@@ -28,10 +29,12 @@ fun HomeNegociadorScreen(
     var produtoSelecionadoId by remember { mutableStateOf<String?>(null) }
     var pontoSelecionado by remember { mutableStateOf<PontoReferencia?>(null) }
     var vendaRastreioId by remember { mutableStateOf<String?>(null) }
+    var telaAnteriorRastreio by remember { mutableStateOf(TelaNegociador.MINHAS_VENDAS) }
 
     LaunchedEffect(vendaIdParaAbrir) {
         vendaIdParaAbrir?.let { vendaId ->
             vendaRastreioId = vendaId
+            telaAnteriorRastreio = TelaNegociador.PRODUTOS
             telaAtual = TelaNegociador.RASTREAMENTO_ENTREGA
             onNotificacaoConsumida()
         }
@@ -39,7 +42,8 @@ fun HomeNegociadorScreen(
 
     BackHandler(enabled = telaAtual != TelaNegociador.PRODUTOS) {
         telaAtual = when (telaAtual) {
-            TelaNegociador.RASTREAMENTO_ENTREGA -> TelaNegociador.MINHAS_VENDAS
+            TelaNegociador.RASTREAMENTO_ENTREGA -> telaAnteriorRastreio
+            TelaNegociador.DETALHE_PEDIDO -> TelaNegociador.MINHAS_VENDAS
             TelaNegociador.CRIAR_EDITAR_PONTO -> TelaNegociador.PONTOS_REFERENCIA
             TelaNegociador.CRIAR_PRODUTO,
             TelaNegociador.DETALHE_PRODUTO,
@@ -136,11 +140,36 @@ fun HomeNegociadorScreen(
                 onVoltar = {
                     telaAtual = TelaNegociador.PRODUTOS
                 },
+                onSelecionarPedido = { vendaId ->
+                    vendaRastreioId = vendaId
+                    telaAtual = TelaNegociador.DETALHE_PEDIDO
+                },
                 onRastrearEntrega = { vendaId ->
                     vendaRastreioId = vendaId
+                    telaAnteriorRastreio = TelaNegociador.MINHAS_VENDAS
                     telaAtual = TelaNegociador.RASTREAMENTO_ENTREGA
                 }
             )
+        }
+
+        TelaNegociador.DETALHE_PEDIDO -> {
+            val vendaId = vendaRastreioId
+            if (vendaId != null) {
+                PedidoDetalheScreen(
+                    usuario = usuario,
+                    vendaId = vendaId,
+                    onVoltar = {
+                        telaAtual = TelaNegociador.MINHAS_VENDAS
+                    },
+                    onRastrearEntrega = { id ->
+                        vendaRastreioId = id
+                        telaAnteriorRastreio = TelaNegociador.DETALHE_PEDIDO
+                        telaAtual = TelaNegociador.RASTREAMENTO_ENTREGA
+                    }
+                )
+            } else {
+                telaAtual = TelaNegociador.MINHAS_VENDAS
+            }
         }
 
         TelaNegociador.RASTREAMENTO_ENTREGA -> {
@@ -149,7 +178,7 @@ fun HomeNegociadorScreen(
                 RastreamentoEntregaScreen(
                     usuario = usuario,
                     vendaId = vendaId,
-                    onVoltar = { telaAtual = TelaNegociador.MINHAS_VENDAS }
+                    onVoltar = { telaAtual = telaAnteriorRastreio }
                 )
             }
         }

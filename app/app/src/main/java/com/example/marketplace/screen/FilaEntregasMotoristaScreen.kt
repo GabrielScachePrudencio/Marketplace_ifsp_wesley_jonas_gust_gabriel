@@ -32,6 +32,7 @@ import com.example.marketplace.util.hasPreciseLocationPermission
 fun FilaEntregasMotoristaScreen(
     usuario: Usuario,
     onVoltar: () -> Unit,
+    onSelecionarPedido: (String) -> Unit = {},
     onVerRota: (String) -> Unit = {}
 ) {
     val context = LocalContext.current
@@ -118,6 +119,11 @@ fun FilaEntregasMotoristaScreen(
                             onMoverParaBaixo = if (index < fila.size - 1) {
                                 { moverItem(viewModel, fila, index, index + 1) }
                             } else null,
+                            onSelecionarPedido = {
+                                if (rastreio.vendaId.isNotBlank()) {
+                                    onSelecionarPedido(rastreio.vendaId)
+                                }
+                            },
                             onVerRota = {
                                 if (rastreio.vendaId.isNotBlank()) {
                                     onVerRota(rastreio.vendaId)
@@ -208,11 +214,13 @@ fun FilaEntregaCard(
     posicao: Int,
     onMoverParaCima: (() -> Unit)?,
     onMoverParaBaixo: (() -> Unit)?,
+    onSelecionarPedido: () -> Unit = {},
     onVerRota: () -> Unit = {},
     onIniciar: () -> Unit,
     onFinalizar: () -> Unit
 ) {
     Card(
+        onClick = onSelecionarPedido,
         modifier = Modifier.fillMaxWidth(),
         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
     ) {

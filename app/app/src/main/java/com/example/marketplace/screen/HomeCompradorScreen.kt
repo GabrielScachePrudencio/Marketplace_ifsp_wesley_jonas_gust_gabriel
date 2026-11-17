@@ -8,6 +8,7 @@ private enum class TelaComprador {
     PRODUTOS,
     DETALHE_PRODUTO,
     MINHAS_VENDAS,
+    DETALHE_PEDIDO,
     RASTREAMENTO_ENTREGA,
     EDITAR_PERFIL
 }
@@ -37,6 +38,7 @@ fun HomeCompradorScreen(
     BackHandler(enabled = telaAtual != TelaComprador.PRODUTOS) {
         telaAtual = when (telaAtual) {
             TelaComprador.RASTREAMENTO_ENTREGA -> telaAnteriorRastreio
+            TelaComprador.DETALHE_PEDIDO -> TelaComprador.MINHAS_VENDAS
             TelaComprador.DETALHE_PRODUTO,
             TelaComprador.MINHAS_VENDAS,
             TelaComprador.EDITAR_PERFIL -> TelaComprador.PRODUTOS
@@ -91,12 +93,36 @@ fun HomeCompradorScreen(
                 onVoltar = {
                     telaAtual = TelaComprador.PRODUTOS
                 },
+                onSelecionarPedido = { vendaId ->
+                    vendaSelecionadaId = vendaId
+                    telaAtual = TelaComprador.DETALHE_PEDIDO
+                },
                 onRastrearEntrega = { vendaId ->
                     vendaSelecionadaId = vendaId
                     telaAnteriorRastreio = TelaComprador.MINHAS_VENDAS
                     telaAtual = TelaComprador.RASTREAMENTO_ENTREGA
                 }
             )
+        }
+
+        TelaComprador.DETALHE_PEDIDO -> {
+            val vendaId = vendaSelecionadaId
+            if (vendaId != null) {
+                PedidoDetalheScreen(
+                    usuario = usuario,
+                    vendaId = vendaId,
+                    onVoltar = {
+                        telaAtual = TelaComprador.MINHAS_VENDAS
+                    },
+                    onRastrearEntrega = { id ->
+                        vendaSelecionadaId = id
+                        telaAnteriorRastreio = TelaComprador.DETALHE_PEDIDO
+                        telaAtual = TelaComprador.RASTREAMENTO_ENTREGA
+                    }
+                )
+            } else {
+                telaAtual = TelaComprador.MINHAS_VENDAS
+            }
         }
 
         TelaComprador.RASTREAMENTO_ENTREGA -> {

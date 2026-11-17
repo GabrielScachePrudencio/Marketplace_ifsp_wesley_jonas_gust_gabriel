@@ -82,6 +82,7 @@ fun HomeMotoristaScreen(
     veiculos: List<Veiculo>,
     onCadastrarVeiculo: () -> Unit,
     onFilaEntregas: () -> Unit = {},
+    onSelecionarPedido: (String) -> Unit = {},
     onVerRota: (String) -> Unit = {},
     onEditarPerfil: () -> Unit = {},
     onLogout: () -> Unit
@@ -128,7 +129,6 @@ fun HomeMotoristaScreen(
     // Estados para controle de modais e ações
     var veiculoEmEdicao by remember { mutableStateOf<Veiculo?>(null) }
     var veiculoParaExcluir by remember { mutableStateOf<Veiculo?>(null) }
-    var vendaDetalheModal by remember { mutableStateOf<Venda?>(null) }
 
     // Cache local de clientes compradores para exibição de nome e endereço de entrega
     var clientesMap by remember { mutableStateOf<Map<String, Usuario>>(emptyMap()) }
@@ -548,19 +548,7 @@ fun HomeMotoristaScreen(
                                     venda = venda,
                                     cliente = cliente,
                                     parceiroVendedor = parceiroVendedor,
-                                    usuario = usuario,
-                                    veiculos = veiculos,
-                                    onVerDetalhes = { vendaDetalheModal = venda },
-                                    onVerRota = { onVerRota(venda.id) },
-                                    onAtualizarStatus = { novoStatus, veiculoId ->
-                                        vendaViewModel.avancarStatus(
-                                            vendaId = venda.id,
-                                            novoStatus = novoStatus,
-                                            perfil = "motorista",
-                                            motoristaId = usuario.uid,
-                                            veiculoId = veiculoId
-                                        )
-                                    }
+                                    onSelecionar = { onSelecionarPedido(venda.id) }
                                 )
                             }
                         }
@@ -827,24 +815,6 @@ fun HomeMotoristaScreen(
             }
         )
     }
-
-    // ========================================================
-    // MODAL DE DETALHES COMPLETOS DA VENDA E ENTREGA
-    // ========================================================
-    if (vendaDetalheModal != null) {
-        val v = vendaDetalheModal!!
-        val cliente = clientesMap[v.compradorId]
-        val parceiroVendedor = negociantes.find { it.uid == v.vendedorId }
-        val veiculoAlocado = veiculos.find { it.id == v.veiculoId }
-
-        DetalhesVendaModal(
-            venda = v,
-            cliente = cliente,
-            parceiroVendedor = parceiroVendedor,
-            veiculo = veiculoAlocado,
-            onDismiss = { vendaDetalheModal = null }
-        )
-    }
 }
 
 @Composable
@@ -863,36 +833,30 @@ private fun ResumoMotorista(valor: Int, titulo: String, modifier: Modifier = Mod
 // ============================================================
 // COMPONENTE: CARD DA ENTREGA PARA O MOTORISTA
 // ============================================================
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun MotoristaEntregaCard(
     venda: Venda,
     cliente: Usuario?,
     parceiroVendedor: Usuario?,
-    usuario: Usuario,
-    veiculos: List<Veiculo>,
-    onVerDetalhes: () -> Unit,
-    onVerRota: () -> Unit,
-    onAtualizarStatus: (String, String?) -> Unit
+    onSelecionar: () -> Unit
 ) {
     val status = venda.statusEntrega
-    var veiculoSelecionado by remember(venda.id) { mutableStateOf<Veiculo?>(null) }
-    var menuVeiculoAberto by remember { mutableStateOf(false) }
 
-    // Resolução do Nome do Cliente
     val nomeCliente = when {
         venda.compradorNome.isNotBlank() -> venda.compradorNome
         cliente != null && cliente.nome.isNotBlank() -> cliente.nome
         else -> "Cliente #${venda.compradorId.take(6)}"
     }
 
-    // Resolução do Título do Produto
     val tituloProduto = when {
         venda.produtoTitulo.isNotBlank() -> venda.produtoTitulo
         else -> "Produto #${venda.produtoId.take(6)}"
     }
 
-    Card(modifier = Modifier.fillMaxWidth()) {
+    Card(
+        onClick = onSelecionar,
+        modifier = Modifier.fillMaxWidth()
+    ) {
         Column(modifier = Modifier.padding(16.dp)) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -909,7 +873,6 @@ private fun MotoristaEntregaCard(
 
             Spacer(Modifier.height(8.dp))
 
-            // Destaque claro do nome do cliente
             Surface(
                 color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.4f),
                 shape = RoundedCornerShape(8.dp),
@@ -948,184 +911,11 @@ private fun MotoristaEntregaCard(
 
             Spacer(Modifier.height(10.dp))
 
-            // Botão para abrir o modal de detalhes
-            OutlinedButton(
-                onClick = onVerDetalhes,
+            Button(
+                onClick = onSelecionar,
                 modifier = Modifier.fillMaxWidth()
             ) {
-                Text("Ver Detalhes do Pedido e Endereço")
-            }
-
-            if (status == StatusEntrega.PRONTO_PARA_ENTREGA ||
-                status == StatusEntrega.SAIU_PARA_ENTREGA ||
-                status == StatusEntrega.A_CAMINHO
-            ) {
-                Spacer(Modifier.height(6.dp))
-                FilledTonalButton(
-                    onClick = onVerRota,
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Text("Ver Rota no Mapa")
-                }
-            }
-
-            Spacer(Modifier.height(8.dp))
-
-            when (status) {
-                StatusEntrega.PENDENTE -> {
-                    Text(
-                        "Pedido pendente. Aguardando liberação para entrega.",
-                        style = MaterialTheme.typography.bodySmall
-                    )
-                }
-
-                StatusEntrega.PRONTO_PARA_ENTREGA -> {
-                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        if (veiculos.isEmpty()) {
-                            Text(
-                                "Cadastre um veículo para poder iniciar a entrega.",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.error
-                            )
-                        } else {
-                            ExposedDropdownMenuBox(
-                                expanded = menuVeiculoAberto,
-                                onExpandedChange = { menuVeiculoAberto = it }
-                            ) {
-                                OutlinedTextField(
-                                    value = veiculoSelecionado?.let { "${it.modelo} - ${it.placa}" } ?: "",
-                                    onValueChange = {},
-                                    readOnly = true,
-                                    label = { Text("Veículo para a entrega") },
-                                    trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = menuVeiculoAberto) },
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .menuAnchor(MenuAnchorType.PrimaryNotEditable)
-                                )
-                                ExposedDropdownMenu(
-                                    expanded = menuVeiculoAberto,
-                                    onDismissRequest = { menuVeiculoAberto = false }
-                                ) {
-                                    veiculos.forEach { veiculo ->
-                                        DropdownMenuItem(
-                                            text = { Text("${veiculo.modelo} - ${veiculo.placa}") },
-                                            onClick = {
-                                                veiculoSelecionado = veiculo
-                                                menuVeiculoAberto = false
-                                            }
-                                        )
-                                    }
-                                }
-                            }
-                        }
-
-                        ConfirmarRetiradaButton(
-                            vendaId = venda.id,
-                            motoristaId = usuario.uid,
-                            enabled = veiculoSelecionado != null,
-                            onConfirmado = {
-                                onAtualizarStatus(StatusEntrega.A_CAMINHO.name, veiculoSelecionado?.id)
-                            }
-                        )
-                    }
-                }
-
-                StatusEntrega.SAIU_PARA_ENTREGA -> {
-                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        val veiculoDaEntrega = veiculos.find { it.id == venda.veiculoId }
-                        if (veiculoDaEntrega != null) {
-                            Text(
-                                "Veículo: ${veiculoDaEntrega.modelo} - ${veiculoDaEntrega.placa}",
-                                style = MaterialTheme.typography.bodySmall
-                            )
-                        }
-
-                        Text(
-                            "Saiu para entrega",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.primary
-                        )
-
-                        Button(
-                            onClick = {
-                                onVerRota()
-                            },
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Text("Tirar foto e confirmar entrega")
-                        }
-
-                        OutlinedButton(
-                            onClick = {
-                                onAtualizarStatus(StatusEntrega.PRONTO_PARA_ENTREGA.name, venda.veiculoId)
-                            },
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Text("Cancelar Entrega")
-                        }
-                    }
-                }
-
-                StatusEntrega.A_CAMINHO -> {
-                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        val veiculoDaEntrega = veiculos.find { it.id == venda.veiculoId }
-                        if (veiculoDaEntrega != null) {
-                            Text(
-                                "Veículo: ${veiculoDaEntrega.modelo} - ${veiculoDaEntrega.placa}",
-                                style = MaterialTheme.typography.bodySmall
-                            )
-                        }
-
-                        Button(
-                            onClick = {
-                                onVerRota()
-                            },
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Text("Tirar foto e confirmar entrega")
-                        }
-
-                        OutlinedButton(
-                            onClick = {
-                                onAtualizarStatus(StatusEntrega.PRONTO_PARA_ENTREGA.name, venda.veiculoId)
-                            },
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Text("Cancelar Coleta / Devolver para Loja")
-                        }
-                    }
-                }
-
-                StatusEntrega.ENTREGUE -> {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            "Entrega Concluída ✓",
-                            style = MaterialTheme.typography.bodyMedium,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.primary
-                        )
-
-                        OutlinedButton(
-                            onClick = {
-                                onAtualizarStatus(StatusEntrega.A_CAMINHO.name, venda.veiculoId)
-                            }
-                        ) {
-                            Text("Desfazer Entrega")
-                        }
-                    }
-                }
-
-                StatusEntrega.CANCELADA -> {
-                    Text(
-                        "Pedido cancelado. Nenhuma ação de entrega disponível.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.error
-                    )
-                }
+                Text("Gerenciar Pedido")
             }
         }
     }
@@ -1288,142 +1078,3 @@ private fun ConfirmarExclusaoVeiculoDialog(
         }
     )
 }
-
-// ============================================================
-// MODAL: DETALHES COMPLETOS DA VENDA E ENTREGA
-// ============================================================
-@Composable
-private fun DetalhesVendaModal(
-    venda: Venda,
-    cliente: Usuario?,
-    parceiroVendedor: Usuario?,
-    veiculo: Veiculo?,
-    onDismiss: () -> Unit
-) {
-    val nomeCliente = when {
-        venda.compradorNome.isNotBlank() -> venda.compradorNome
-        cliente != null && cliente.nome.isNotBlank() -> cliente.nome
-        else -> "Cliente #${venda.compradorId.take(6)}"
-    }
-
-    val tituloProduto = when {
-        venda.produtoTitulo.isNotBlank() -> venda.produtoTitulo
-        else -> "Produto #${venda.produtoId.take(6)}"
-    }
-
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text("Pedido #${venda.id.take(8)}", style = MaterialTheme.typography.titleLarge)
-                StatusEntregaBadge(status = venda.statusEntrega)
-            }
-        },
-        text = {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .verticalScroll(rememberScrollState()),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
-                ) {
-                    Column(modifier = Modifier.padding(12.dp)) {
-                        Text("Dados do cliente e entrega", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
-                        Spacer(Modifier.height(4.dp))
-                        Text("Nome: $nomeCliente", fontWeight = FontWeight.SemiBold)
-                        if (cliente != null && cliente.email.isNotBlank()) {
-                            Text("E-mail: ${cliente.email}", style = MaterialTheme.typography.bodySmall)
-                        }
-                        Spacer(Modifier.height(8.dp))
-                        Text("Endereço de entrega", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
-                        if (cliente != null && cliente.rua.isNotBlank()) {
-                            Text("${cliente.rua}, nº ${cliente.numero}")
-                            Text("${cliente.cidade} - ${cliente.estado}")
-                            Text("CEP: ${cliente.cep}")
-                        } else {
-                            Text("Endereço detalhado não disponível no cadastro do cliente.", style = MaterialTheme.typography.bodySmall)
-                        }
-                    }
-                }
-
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
-                ) {
-                    Column(modifier = Modifier.padding(12.dp)) {
-                        Text("Detalhes do produto", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
-                        Spacer(Modifier.height(4.dp))
-                        Text("Item: $tituloProduto", fontWeight = FontWeight.SemiBold)
-                        Text("Quantidade: ${venda.quantidade}")
-                        if (venda.valorUnitario > 0.0) {
-                            Text("Valor unitário: R$ %.2f".format(venda.valorUnitario))
-                        }
-                        Text(
-                            "Valor total do pedido: R$ %.2f".format(venda.valorTotal),
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.primary
-                        )
-                    }
-                }
-
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
-                ) {
-                    Column(modifier = Modifier.padding(12.dp)) {
-                        Text("Ponto de coleta", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
-                        Spacer(Modifier.height(4.dp))
-                        if (parceiroVendedor != null) {
-                            Text("Loja: ${parceiroVendedor.nome}", fontWeight = FontWeight.SemiBold)
-                            if (parceiroVendedor.rua.isNotBlank()) {
-                                Text("${parceiroVendedor.rua}, nº ${parceiroVendedor.numero} - ${parceiroVendedor.cidade}")
-                            }
-                            if (parceiroVendedor.email.isNotBlank()) {
-                                Text("Contato: ${parceiroVendedor.email}", style = MaterialTheme.typography.bodySmall)
-                            }
-                        } else {
-                            Text("ID do vendedor: ${venda.vendedorId}", style = MaterialTheme.typography.bodySmall)
-                        }
-                    }
-                }
-
-                if (veiculo != null) {
-                    Card(
-                        modifier = Modifier.fillMaxWidth(),
-                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
-                    ) {
-                        Column(modifier = Modifier.padding(12.dp)) {
-                            Text("Veículo da entrega", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
-                            Spacer(Modifier.height(4.dp))
-                            Text("${veiculo.modelo} - placa ${veiculo.placa}")
-                            Text("Tipo: ${veiculo.tipo} • Cor: ${veiculo.cor}", style = MaterialTheme.typography.bodySmall)
-                        }
-                    }
-                }
-
-                val dataFormatada = try {
-                    venda.dataCriacao.format(DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm"))
-                } catch (e: Exception) {
-                    ""
-                }
-                if (dataFormatada.isNotBlank()) {
-                    Text(
-                        "Data do pedido: $dataFormatada",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-            }
-        },
-        confirmButton = { Button(onClick = onDismiss) { Text("Fechar") } }
-    )
-}
-
-// ============================================================

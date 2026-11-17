@@ -33,6 +33,7 @@ import com.example.marketplace.screen.MinhasVendasScreen
 import com.example.marketplace.screen.ProdutoDetalheScreen
 import com.example.marketplace.screen.ProdutoListScreen
 import com.example.marketplace.screen.FilaEntregasMotoristaScreen
+import com.example.marketplace.screen.PedidoDetalheScreen
 import com.example.marketplace.screen.RastreamentoEntregaScreen
 import com.example.marketplace.service.EntregaMessagingService
 import com.example.marketplace.service.LocationTrackingService
@@ -70,6 +71,7 @@ enum class TelaMotorista {
     HOME,
     CADASTRAR_VEICULO,
     FILA_ENTREGAS,
+    DETALHE_PEDIDO,
     RASTREAMENTO_ENTREGA,
     EDITAR_PERFIL
 }
@@ -223,12 +225,19 @@ class MainActivity : ComponentActivity() {
                             var telaAnteriorRastreio by remember {
                                 mutableStateOf(TelaMotorista.HOME)
                             }
+                            var telaAnteriorDetalhePedido by remember {
+                                mutableStateOf(TelaMotorista.HOME)
+                            }
+                            var telaAnteriorCadastroVeiculo by remember {
+                                mutableStateOf(TelaMotorista.HOME)
+                            }
 
                             BackHandler(enabled = telaMotorista != TelaMotorista.HOME) {
                                 telaMotorista = when (telaMotorista) {
                                     TelaMotorista.RASTREAMENTO_ENTREGA -> telaAnteriorRastreio
+                                    TelaMotorista.DETALHE_PEDIDO -> telaAnteriorDetalhePedido
+                                    TelaMotorista.CADASTRAR_VEICULO -> telaAnteriorCadastroVeiculo
                                     TelaMotorista.HOME -> TelaMotorista.HOME
-                                    TelaMotorista.CADASTRAR_VEICULO,
                                     TelaMotorista.FILA_ENTREGAS,
                                     TelaMotorista.EDITAR_PERFIL -> TelaMotorista.HOME
                                 }
@@ -270,7 +279,7 @@ class MainActivity : ComponentActivity() {
                                         veiculos = veiculos,
 
                                         onCadastrarVeiculo = {
-
+                                            telaAnteriorCadastroVeiculo = TelaMotorista.HOME
                                             telaMotorista =
                                                 TelaMotorista
                                                     .CADASTRAR_VEICULO
@@ -278,6 +287,12 @@ class MainActivity : ComponentActivity() {
 
                                         onFilaEntregas = {
                                             telaMotorista = TelaMotorista.FILA_ENTREGAS
+                                        },
+
+                                        onSelecionarPedido = { vendaId ->
+                                            vendaRastreioId = vendaId
+                                            telaAnteriorDetalhePedido = TelaMotorista.HOME
+                                            telaMotorista = TelaMotorista.DETALHE_PEDIDO
                                         },
 
                                         onVerRota = { vendaId ->
@@ -321,15 +336,15 @@ class MainActivity : ComponentActivity() {
                                                     usuario.uid
                                                 )
 
-                                            // Volta para Home
+                                            // Volta para a tela anterior (Home ou Detalhe do Pedido)
                                             telaMotorista =
-                                                TelaMotorista.HOME
+                                                telaAnteriorCadastroVeiculo
                                         },
 
                                         onVoltar = {
 
                                             telaMotorista =
-                                                TelaMotorista.HOME
+                                                telaAnteriorCadastroVeiculo
                                         }
                                     )
                                 }
@@ -344,12 +359,45 @@ class MainActivity : ComponentActivity() {
                                         onVoltar = {
                                             telaMotorista = TelaMotorista.HOME
                                         },
+                                        onSelecionarPedido = { vendaId ->
+                                            vendaRastreioId = vendaId
+                                            telaAnteriorDetalhePedido = TelaMotorista.FILA_ENTREGAS
+                                            telaMotorista = TelaMotorista.DETALHE_PEDIDO
+                                        },
                                         onVerRota = { vendaId ->
                                             vendaRastreioId = vendaId
                                             telaAnteriorRastreio = TelaMotorista.FILA_ENTREGAS
                                             telaMotorista = TelaMotorista.RASTREAMENTO_ENTREGA
                                         }
                                     )
+                                }
+
+                                // =====================================
+                                // DETALHE DO PEDIDO (MOTORISTA)
+                                // =====================================
+
+                                TelaMotorista.DETALHE_PEDIDO -> {
+                                    val vendaId = vendaRastreioId
+                                    if (vendaId != null) {
+                                        PedidoDetalheScreen(
+                                            usuario = usuario,
+                                            vendaId = vendaId,
+                                            onVoltar = {
+                                                telaMotorista = telaAnteriorDetalhePedido
+                                            },
+                                            onRastrearEntrega = { id ->
+                                                vendaRastreioId = id
+                                                telaAnteriorRastreio = TelaMotorista.DETALHE_PEDIDO
+                                                telaMotorista = TelaMotorista.RASTREAMENTO_ENTREGA
+                                            },
+                                            onCadastrarVeiculo = {
+                                                telaAnteriorCadastroVeiculo = TelaMotorista.DETALHE_PEDIDO
+                                                telaMotorista = TelaMotorista.CADASTRAR_VEICULO
+                                            }
+                                        )
+                                    } else {
+                                        telaMotorista = TelaMotorista.HOME
+                                    }
                                 }
 
                                 // =====================================
