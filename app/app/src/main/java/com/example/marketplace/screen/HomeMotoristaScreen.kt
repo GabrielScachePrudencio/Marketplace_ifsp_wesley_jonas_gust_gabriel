@@ -429,7 +429,7 @@ fun HomeMotoristaScreen(
                                         it.statusEntrega == StatusEntrega.A_CAMINHO ||
                                                 it.statusEntrega == StatusEntrega.SAIU_PARA_ENTREGA
                                     },
-                                    titulo = "Em rota",
+                                    titulo = "Em rota (máx. 1)",
                                     modifier = Modifier.weight(1f)
                                 )
                                 ResumoMotorista(
@@ -437,6 +437,45 @@ fun HomeMotoristaScreen(
                                     titulo = "Concluídas",
                                     modifier = Modifier.weight(1f)
                                 )
+                            }
+                        }
+
+                        val entregaAtivaAtual = entregasMotorista.firstOrNull {
+                            it.motoristaId == usuario.uid &&
+                                (it.statusEntrega == StatusEntrega.A_CAMINHO ||
+                                    it.statusEntrega == StatusEntrega.SAIU_PARA_ENTREGA)
+                        }
+                        if (entregaAtivaAtual != null) {
+                            item {
+                                Card(
+                                    onClick = { onSelecionarPedido(entregaAtivaAtual.id) },
+                                    modifier = Modifier.fillMaxWidth(),
+                                    colors = CardDefaults.cardColors(
+                                        containerColor = MaterialTheme.colorScheme.secondaryContainer
+                                    )
+                                ) {
+                                    Column(
+                                        modifier = Modifier.padding(14.dp),
+                                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                                    ) {
+                                        Text(
+                                            text = "🚚 Entrega vinculada em andamento (1/1)",
+                                            style = MaterialTheme.typography.titleSmall,
+                                            fontWeight = FontWeight.Bold,
+                                            color = MaterialTheme.colorScheme.onSecondaryContainer
+                                        )
+                                        Text(
+                                            text = "Pedido #${entregaAtivaAtual.id.take(8)} • ${entregaAtivaAtual.produtoTitulo.ifBlank { "Em transporte" }}",
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            color = MaterialTheme.colorScheme.onSecondaryContainer
+                                        )
+                                        Text(
+                                            text = "Você só pode ter 1 entrega vinculada por vez. Toque para abrir este pedido.",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.85f)
+                                        )
+                                    }
+                                }
                             }
                         }
 

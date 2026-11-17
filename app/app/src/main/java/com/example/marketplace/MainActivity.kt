@@ -390,6 +390,9 @@ class MainActivity : ComponentActivity() {
                                                 telaAnteriorRastreio = TelaMotorista.DETALHE_PEDIDO
                                                 telaMotorista = TelaMotorista.RASTREAMENTO_ENTREGA
                                             },
+                                            onAbrirOutroPedido = { outroVendaId ->
+                                                vendaRastreioId = outroVendaId
+                                            },
                                             onCadastrarVeiculo = {
                                                 telaAnteriorCadastroVeiculo = TelaMotorista.DETALHE_PEDIDO
                                                 telaMotorista = TelaMotorista.CADASTRAR_VEICULO

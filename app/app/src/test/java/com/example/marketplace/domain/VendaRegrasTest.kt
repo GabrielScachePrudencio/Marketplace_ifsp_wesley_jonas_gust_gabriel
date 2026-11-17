@@ -1,5 +1,6 @@
 package com.example.marketplace.domain
 
+import com.example.marketplace.model.Venda
 import com.example.marketplace.model.enums.StatusEntrega
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertThrows
@@ -93,6 +94,22 @@ class VendaRegrasTest {
         }
         assertThrows(IllegalArgumentException::class.java) {
             VendaRegras.validarTransicao("ENTREGUE", "CANCELADA", "comprador")
+        }
+    }
+
+    @Test
+    fun motorista_podeTerApenasUmaEntregaAtivaPorVez() {
+        val vendaEntregue = Venda(id = "venda-1", motoristaId = "mot-1", status = "ENTREGUE")
+        // Sem nenhuma outra entrega ativa -> permitido
+        VendaRegras.validarEntregaUnicaMotorista(listOf(vendaEntregue), vendaAtualId = "venda-2")
+
+        // Já possui outra venda A_CAMINHO -> bloqueado
+        val vendaEmAndamento = Venda(id = "venda-ativa", motoristaId = "mot-1", status = "A_CAMINHO")
+        assertThrows(IllegalArgumentException::class.java) {
+            VendaRegras.validarEntregaUnicaMotorista(
+                listOf(vendaEntregue, vendaEmAndamento),
+                vendaAtualId = "venda-2"
+            )
         }
     }
 }

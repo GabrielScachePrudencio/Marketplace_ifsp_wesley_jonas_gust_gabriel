@@ -100,8 +100,18 @@ class VendaRepository(
         val venda = buscarVendaPorId(id) ?: throw Exception("Venda não encontrada")
         VendaRegras.validarTransicao(venda.status, novoStatus, perfil, veiculoId)
 
-        val novoMotoristaId = if (!motoristaId.isNullOrBlank()) motoristaId else venda.motoristaId
-        val novoVeiculoId = veiculoId ?: venda.veiculoId
+        val limpandoMotorista = novoStatus in setOf("PRONTO_PARA_ENTREGA", "PENDENTE", "CANCELADA")
+        val novoMotoristaId = when {
+            limpandoMotorista -> ""
+            !motoristaId.isNullOrBlank() -> motoristaId
+            else -> venda.motoristaId
+        }
+        val novoVeiculoId = if (limpandoMotorista) null else (veiculoId ?: venda.veiculoId)
+
+        if ((novoStatus == "A_CAMINHO" || novoStatus == "SAIU_PARA_ENTREGA") && novoMotoristaId.isNotBlank()) {
+            val vendasDoMotorista = buscarVendasDoMotorista(novoMotoristaId)
+            VendaRegras.validarEntregaUnicaMotorista(vendasDoMotorista, id)
+        }
 
         val atualizada = venda.copy(
             status = novoStatus,
@@ -220,6 +230,17 @@ class VendaRepository(
                 .documents.map { vendaDeDocumento(it) }
         } catch (e: Exception) {
             vendaDao.buscarPorCompradorEProduto(compradorId, produtoId)
+        }
+    }
+
+    /** Pedidos vinculados a um motorista: Firestore primeiro, Room se offline */
+    suspend fun buscarVendasDoMotorista(motoristaId: String): List<Venda> {
+        if (motoristaId.isBlank()) return emptyList()
+        return try {
+            colecao.whereEqualTo("motoristaId", motoristaId).get().await()
+                .documents.map { vendaDeDocumento(it) }
+        } catch (e: Exception) {
+            vendaDao.buscarPorMotorista(motoristaId)
         }
     }
 

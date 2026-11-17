@@ -70,6 +70,7 @@ fun PedidoDetalheScreen(
     vendaId: String,
     onVoltar: () -> Unit,
     onRastrearEntrega: (String) -> Unit = {},
+    onAbrirOutroPedido: (String) -> Unit = {},
     onCadastrarVeiculo: (() -> Unit)? = null
 ) {
     val context = LocalContext.current
@@ -85,6 +86,7 @@ fun PedidoDetalheScreen(
         factory = VeiculoViewModelFactory(context)
     )
 
+    val todasVendas by vendaViewModel.vendas.collectAsState()
     val statusUiState by vendaViewModel.statusUiState.collectAsState()
     val veiculosMotorista by veiculoViewModel.veiculos.collectAsState()
 
@@ -292,6 +294,16 @@ fun PedidoDetalheScreen(
         val ehComprador = usuario.perfil == "comprador" && vendaAtual.compradorId == usuario.uid
         val ehNegociador = usuario.perfil == "negociador" && vendaAtual.vendedorId == usuario.uid
         val ehMotorista = usuario.perfil == "motorista"
+
+        val outraEntregaAtiva = remember(todasVendas, vendaAtual.id, usuario.uid, ehMotorista) {
+            if (!ehMotorista) null
+            else todasVendas.firstOrNull {
+                it.id != vendaAtual.id &&
+                    it.motoristaId == usuario.uid &&
+                    (it.statusEntrega == StatusEntrega.A_CAMINHO ||
+                        it.statusEntrega == StatusEntrega.SAIU_PARA_ENTREGA)
+            }
+        }
 
         var veiculoSelecionado by remember(vendaAtual.id, veiculosMotorista, vendaAtual.veiculoId) {
             mutableStateOf(
@@ -586,79 +598,114 @@ fun PedidoDetalheScreen(
                             }
 
                             StatusEntrega.PRONTO_PARA_ENTREGA -> {
-                                if (veiculosMotorista.isEmpty()) {
-                                    Text(
-                                        text = "Você precisa cadastrar um veículo para iniciar entregas.",
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.error
-                                    )
-                                    if (onCadastrarVeiculo != null) {
-                                        OutlinedButton(
-                                            onClick = onCadastrarVeiculo,
-                                            modifier = Modifier.fillMaxWidth()
+                                if (outraEntregaAtiva != null) {
+                                    Card(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        colors = CardDefaults.cardColors(
+                                            containerColor = MaterialTheme.colorScheme.errorContainer
+                                        )
+                                    ) {
+                                        Column(
+                                            modifier = Modifier.padding(12.dp),
+                                            verticalArrangement = Arrangement.spacedBy(8.dp)
                                         ) {
-                                            Icon(Icons.Default.DirectionsCar, contentDescription = null)
-                                            Spacer(Modifier.width(8.dp))
-                                            Text("Cadastrar Veículo")
+                                            Text(
+                                                text = "⚠️ Limite de 1 entrega por vez",
+                                                style = MaterialTheme.typography.titleSmall,
+                                                fontWeight = FontWeight.Bold,
+                                                color = MaterialTheme.colorScheme.onErrorContainer
+                                            )
+                                            Text(
+                                                text = "Você já possui o Pedido #${outraEntregaAtiva.id.take(8)} vinculado em andamento. Conclua ou devolva a entrega atual antes de assumir outro pedido.",
+                                                style = MaterialTheme.typography.bodySmall,
+                                                color = MaterialTheme.colorScheme.onErrorContainer
+                                            )
+                                            Button(
+                                                onClick = { onAbrirOutroPedido(outraEntregaAtiva.id) },
+                                                colors = ButtonDefaults.buttonColors(
+                                                    containerColor = MaterialTheme.colorScheme.error
+                                                ),
+                                                modifier = Modifier.fillMaxWidth()
+                                            ) {
+                                                Text("Ir para minha entrega atual (#${outraEntregaAtiva.id.take(8)})")
+                                            }
                                         }
                                     }
                                 } else {
-                                    ExposedDropdownMenuBox(
-                                        expanded = menuVeiculoAberto,
-                                        onExpandedChange = { menuVeiculoAberto = it }
-                                    ) {
-                                        OutlinedTextField(
-                                            value = veiculoSelecionado?.let { "${it.modelo} - ${it.placa}" } ?: "",
-                                            onValueChange = {},
-                                            readOnly = true,
-                                            label = { Text("Veículo para a entrega") },
-                                            trailingIcon = {
-                                                ExposedDropdownMenuDefaults.TrailingIcon(expanded = menuVeiculoAberto)
-                                            },
-                                            modifier = Modifier
-                                                .fillMaxWidth()
-                                                .menuAnchor(MenuAnchorType.PrimaryNotEditable)
+                                    if (veiculosMotorista.isEmpty()) {
+                                        Text(
+                                            text = "Você precisa cadastrar um veículo para iniciar entregas.",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.error
                                         )
-                                        ExposedDropdownMenu(
+                                        if (onCadastrarVeiculo != null) {
+                                            OutlinedButton(
+                                                onClick = onCadastrarVeiculo,
+                                                modifier = Modifier.fillMaxWidth()
+                                            ) {
+                                                Icon(Icons.Default.DirectionsCar, contentDescription = null)
+                                                Spacer(Modifier.width(8.dp))
+                                                Text("Cadastrar Veículo")
+                                            }
+                                        }
+                                    } else {
+                                        ExposedDropdownMenuBox(
                                             expanded = menuVeiculoAberto,
-                                            onDismissRequest = { menuVeiculoAberto = false }
+                                            onExpandedChange = { menuVeiculoAberto = it }
                                         ) {
-                                            veiculosMotorista.forEach { veiculo ->
-                                                DropdownMenuItem(
-                                                    text = { Text("${veiculo.modelo} - ${veiculo.placa}") },
-                                                    onClick = {
-                                                        veiculoSelecionado = veiculo
-                                                        menuVeiculoAberto = false
+                                            OutlinedTextField(
+                                                value = veiculoSelecionado?.let { "${it.modelo} - ${it.placa}" } ?: "",
+                                                onValueChange = {},
+                                                readOnly = true,
+                                                label = { Text("Veículo para a entrega") },
+                                                trailingIcon = {
+                                                    ExposedDropdownMenuDefaults.TrailingIcon(expanded = menuVeiculoAberto)
+                                                },
+                                                modifier = Modifier
+                                                    .fillMaxWidth()
+                                                    .menuAnchor(MenuAnchorType.PrimaryNotEditable)
+                                            )
+                                            ExposedDropdownMenu(
+                                                expanded = menuVeiculoAberto,
+                                                onDismissRequest = { menuVeiculoAberto = false }
+                                            ) {
+                                                veiculosMotorista.forEach { veiculo ->
+                                                    DropdownMenuItem(
+                                                        text = { Text("${veiculo.modelo} - ${veiculo.placa}") },
+                                                        onClick = {
+                                                            veiculoSelecionado = veiculo
+                                                            menuVeiculoAberto = false
+                                                        }
+                                                    )
+                                                }
+                                            }
+                                        }
+                                    }
+
+                                    ConfirmarRetiradaButton(
+                                        vendaId = vendaAtual.id,
+                                        motoristaId = usuario.uid,
+                                        enabled = veiculoSelecionado != null,
+                                        onConfirmado = {
+                                            vendaViewModel.avancarStatus(
+                                                vendaId = vendaAtual.id,
+                                                novoStatus = StatusEntrega.A_CAMINHO.name,
+                                                perfil = "motorista",
+                                                motoristaId = usuario.uid,
+                                                veiculoId = veiculoSelecionado?.id
+                                            )
+                                            if (hasPreciseLocationPermission(context)) {
+                                                ContextCompat.startForegroundService(
+                                                    context,
+                                                    Intent(context, LocationTrackingService::class.java).apply {
+                                                        action = LocationTrackingService.ACTION_START_TRACKING
+                                                        putExtra(LocationTrackingService.EXTRA_VENDA_ID, vendaAtual.id)
                                                     }
                                                 )
                                             }
                                         }
-                                    }
+                                    )
                                 }
-
-                                ConfirmarRetiradaButton(
-                                    vendaId = vendaAtual.id,
-                                    motoristaId = usuario.uid,
-                                    enabled = veiculoSelecionado != null,
-                                    onConfirmado = {
-                                        vendaViewModel.avancarStatus(
-                                            vendaId = vendaAtual.id,
-                                            novoStatus = StatusEntrega.A_CAMINHO.name,
-                                            perfil = "motorista",
-                                            motoristaId = usuario.uid,
-                                            veiculoId = veiculoSelecionado?.id
-                                        )
-                                        if (hasPreciseLocationPermission(context)) {
-                                            ContextCompat.startForegroundService(
-                                                context,
-                                                Intent(context, LocationTrackingService::class.java).apply {
-                                                    action = LocationTrackingService.ACTION_START_TRACKING
-                                                    putExtra(LocationTrackingService.EXTRA_VENDA_ID, vendaAtual.id)
-                                                }
-                                            )
-                                        }
-                                    }
-                                )
                             }
 
                             StatusEntrega.SAIU_PARA_ENTREGA, StatusEntrega.A_CAMINHO -> {
@@ -736,19 +783,27 @@ fun PedidoDetalheScreen(
                             }
 
                             StatusEntrega.ENTREGUE -> {
-                                OutlinedButton(
-                                    onClick = {
-                                        vendaViewModel.avancarStatus(
-                                            vendaId = vendaAtual.id,
-                                            novoStatus = StatusEntrega.A_CAMINHO.name,
-                                            perfil = "motorista",
-                                            motoristaId = usuario.uid,
-                                            veiculoId = vendaAtual.veiculoId
-                                        )
-                                    },
-                                    modifier = Modifier.fillMaxWidth()
-                                ) {
-                                    Text("Desfazer Entrega (Voltar para A Caminho)")
+                                if (outraEntregaAtiva != null) {
+                                    Text(
+                                        text = "Não é possível reabrir esta entrega enquanto o Pedido #${outraEntregaAtiva.id.take(8)} estiver em andamento (limite de 1 entrega por vez).",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                } else {
+                                    OutlinedButton(
+                                        onClick = {
+                                            vendaViewModel.avancarStatus(
+                                                vendaId = vendaAtual.id,
+                                                novoStatus = StatusEntrega.A_CAMINHO.name,
+                                                perfil = "motorista",
+                                                motoristaId = usuario.uid,
+                                                veiculoId = vendaAtual.veiculoId
+                                            )
+                                        },
+                                        modifier = Modifier.fillMaxWidth()
+                                    ) {
+                                        Text("Desfazer Entrega (Voltar para A Caminho)")
+                                    }
                                 }
                             }
 

@@ -80,22 +80,22 @@ class RastreioEntregaRepository(
     /** Chamado quando o motorista aceita e sai para entrega */
     suspend fun iniciarEntrega(rastreioId: String, motoristaId: String, posicaoNaFila: Int? = null) {
         val atual = buscarPorId(rastreioId) ?: return
-        val pos = posicaoNaFila ?: atual.posicaoNaFila ?: run {
-            val filaAtual = try {
-                colecao.whereEqualTo("motoristaId", motoristaId).get().await()
-                    .documents.map { rastreioDeDocumento(it) }
-                    .filter { it.finalizadoEm == null && it.id != rastreioId }
-            } catch (e: Exception) {
-                rastreioEntregaDao.listarFilaDoMotorista(motoristaId)
-                    .filter { it.finalizadoEm == null && it.id != rastreioId }
-            }
-            (filaAtual.maxOfOrNull { it.posicaoNaFila ?: 0 } ?: 0) + 1
+        val filaAtual = try {
+            colecao.whereEqualTo("motoristaId", motoristaId).get().await()
+                .documents.map { rastreioDeDocumento(it) }
+                .filter { it.finalizadoEm == null && it.id != rastreioId }
+        } catch (e: Exception) {
+            rastreioEntregaDao.listarFilaDoMotorista(motoristaId)
+                .filter { it.finalizadoEm == null && it.id != rastreioId }
+        }
+        require(filaAtual.isEmpty()) {
+            "O motorista só pode ter uma entrega vinculada por vez. Conclua ou devolva a entrega atual antes de assumir outra."
         }
         val atualizado = atual.copy(
             motoristaId = motoristaId,
             iniciadoEm = atual.iniciadoEm ?: System.currentTimeMillis(),
             finalizadoEm = null,
-            posicaoNaFila = pos
+            posicaoNaFila = 1
         )
         salvarEPersistir(atualizado, OperacaoPendente.UPDATE)
     }

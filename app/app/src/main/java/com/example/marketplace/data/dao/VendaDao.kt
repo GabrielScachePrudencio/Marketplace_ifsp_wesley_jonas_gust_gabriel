@@ -27,6 +27,9 @@ interface VendaDao {
     @Query("SELECT * FROM vendas WHERE compradorId = :compradorId AND produtoId = :produtoId")
     suspend fun buscarPorCompradorEProduto(compradorId: String, produtoId: String): List<Venda>
 
+    @Query("SELECT * FROM vendas WHERE motoristaId = :motoristaId")
+    suspend fun buscarPorMotorista(motoristaId: String): List<Venda>
+
     @Delete
     suspend fun deletar(venda: Venda)
 }

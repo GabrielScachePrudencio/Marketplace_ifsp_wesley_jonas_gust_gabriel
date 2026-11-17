@@ -1,10 +1,13 @@
 package com.example.marketplace.domain
 
 import com.example.marketplace.model.Produto
+import com.example.marketplace.model.Venda
 import com.example.marketplace.model.enums.StatusEntrega
 
 object VendaRegras {
     val STATUS_INICIAL = StatusEntrega.PENDENTE.name
+    const val MENSAGEM_MOTORISTA_JA_POSSUI_ENTREGA =
+        "O motorista só pode ter uma entrega vinculada por vez. Conclua ou devolva a entrega atual antes de assumir outra."
 
     private val transicoesPermitidas: Map<StatusEntrega, Set<StatusEntrega>> = mapOf(
         StatusEntrega.PENDENTE to setOf(StatusEntrega.PRONTO_PARA_ENTREGA, StatusEntrega.A_CAMINHO, StatusEntrega.CANCELADA),
@@ -78,6 +81,20 @@ object VendaRegras {
                     }
                 }
             }
+        }
+    }
+
+    fun validarEntregaUnicaMotorista(
+        vendasDoMotorista: List<Venda>,
+        vendaAtualId: String
+    ) {
+        val outraAtiva = vendasDoMotorista.firstOrNull { venda ->
+            venda.id != vendaAtualId &&
+                (venda.statusEntrega == StatusEntrega.A_CAMINHO ||
+                    venda.statusEntrega == StatusEntrega.SAIU_PARA_ENTREGA)
+        }
+        require(outraAtiva == null) {
+            "$MENSAGEM_MOTORISTA_JA_POSSUI_ENTREGA (Pedido ativo: #${outraAtiva!!.id.take(8)})"
         }
     }
 }
